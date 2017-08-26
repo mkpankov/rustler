@@ -22,4 +22,4 @@ ENV ROCKET_ENV=prod
 
 ENV RUST_BACKTRACE=1
 
-CMD cargo run
+CMD target/release/rustler
