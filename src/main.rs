@@ -9,6 +9,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
+extern crate zip;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use rocket::State;
@@ -18,7 +19,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::env;
 use std::error::Error;
-use std::io::{self, Read};
+use std::io::{self, BufReader, Read};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
@@ -426,16 +427,16 @@ fn get_env() -> String {
     }
 }
 
-fn get_data_path(env: &str) -> Result<PathBuf, io::Error> {
-    let mut data_dir = match &*env {
+fn get_data_dir_path(env: &str) -> Result<PathBuf, io::Error> {
+    let data_dir = match &*env {
         "dev" => {
-            let cur_dir = env::current_dir()?;
-            cur_dir.clone()
+            let mut cur_dir = env::current_dir()?;
+            cur_dir.push("data");
+            cur_dir
         }
-        "prod" => PathBuf::from("tmp"),
+        "prod" => PathBuf::from("/tmp/data"),
         _ => unreachable!(),
     };
-    data_dir.push("data");
     Ok(data_dir)
 }
 
@@ -508,6 +509,72 @@ fn input_data(data_path: &Path) -> Result<Storage, io::Error> {
     })
 }
 
+fn input_data_prod(data_dir_path: &Path) -> Result<Storage, io::Error> {
+    let entity_name_templates = ["users_", "locations_", "visits_"];
+    let mut all_users = HashMap::new();
+    let mut all_locations = HashMap::new();
+    let mut all_visits = HashMap::new();
+
+    let data_file_path = data_dir_path.join("data.zip");
+    let file = File::open(data_file_path).unwrap();
+    let reader = BufReader::new(file);
+
+    let mut zip = zip::ZipArchive::new(reader).unwrap();
+
+    for template in &entity_name_templates {
+        let mut index = 1;
+        loop {
+            let mut data_file_name = String::from(*template);
+            data_file_name.push_str(&format!("{}", index));
+            data_file_name.push_str(".json");
+
+            println!("Reading data file: {:?}", data_file_name);
+            let maybe_data_file = zip.by_name(data_file_name.as_str());
+            let mut data_file = match maybe_data_file {
+                Ok(f) => f,
+                Err(e) => {
+                    println!("error: {}", e);
+                    break;
+                }
+            };
+            let mut data = String::new();
+            data_file.read_to_string(&mut data).unwrap();
+
+            match &*template {
+                &"users_" => {
+                    let mut users: HashMap<String, Vec<User>> =
+                        serde_json::from_str(&data).unwrap();
+                    for v in users.remove("users").unwrap() {
+                        all_users.insert(v.id, v);
+                    }
+                }
+                &"locations_" => {
+                    let mut locations: HashMap<String, Vec<Location>> =
+                        serde_json::from_str(&data).unwrap();
+                    for v in locations.remove("locations").unwrap() {
+                        all_locations.insert(v.id, v);
+                    }
+                }
+                &"visits_" => {
+                    let mut visits: HashMap<String, Vec<Visit>> =
+                        serde_json::from_str(&data).unwrap();
+                    for v in visits.remove("visits").unwrap() {
+                        all_visits.insert(v.id, v);
+                    }
+                }
+                _ => unreachable!(),
+            }
+            index += 1;
+        }
+    }
+
+    Ok(Storage {
+        users: all_users,
+        locations: all_locations,
+        visits: all_visits,
+    })
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 enum Gender {
     #[serde(rename = "m")]
@@ -572,11 +639,18 @@ struct VisitUpdate {
 
 fn work() -> Result<(), Box<Error>> {
     let env = get_env();
-    let data_path = get_data_path(&env).unwrap();
-    let mut options_path = data_path.clone();
+    println!("env: {:?}", env);
+    let data_dir_path = get_data_dir_path(&env).unwrap();
+    println!("data_dir_path: {:?}", data_dir_path);
+
+    let mut options_path = data_dir_path.clone();
     options_path.push("options.txt");
     let _options = read_options(&options_path);
-    let data = input_data(&data_path).unwrap();
+    let data = match &*env {
+        "prod" => input_data_prod(&data_dir_path).unwrap(),
+        "dev" => input_data(&data_dir_path).unwrap(),
+        _ => unreachable!(),
+    };
     let data_locked = RwLock::new(data);
 
     rocket::ignite()

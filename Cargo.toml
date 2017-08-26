@@ -3,6 +3,10 @@ authors = ["Michael Pankov <work@michaelpankov.com>"]
 name = "rustler"
 version = "0.1.0"
 
+[[bin]]
+name = "rustler"
+path = "src/main.rs"
+
 [dependencies]
 arrayvec = "0.4.0"
 chrono = "0.4.0"
@@ -13,7 +17,4 @@ rocket_contrib = "0.3.2"
 serde = "1.0.11"
 serde_derive = "1.0.11"
 serde_json = "1.0.2"
-
-[[bin]]
-path = "src/main.rs"
-name = "rustler"
+zip = "0.2.6"
