@@ -31,9 +31,12 @@ fn users(id: u32, storage: State<RwLock<Storage>>) -> Option<Json<User>> {
 
 #[derive(Serialize, Deserialize, FromForm)]
 struct UsersVisitsParams {
+    #[form(field = "fromDate")]
     from_date: Option<i32>,
+    #[form(field = "toDate")]
     to_date: Option<i32>,
     country: Option<String>,
+    #[form(field = "toDistance")]
     to_distance: Option<u32>,
 }
 
@@ -180,9 +183,13 @@ fn locations(id: u32, storage: State<RwLock<Storage>>) -> Option<Json<Location>>
 
 #[derive(FromForm)]
 struct LocationAvgParams {
+    #[form(field = "fromDate")]
     from_date: Option<i32>,
+    #[form(field = "toDate")]
     to_date: Option<i32>,
+    #[form(field = "fromAge")]
     from_age: Option<i32>,
+    #[form(field = "toAge")]
     to_age: Option<i32>,
     gender: Option<String>,
 }
