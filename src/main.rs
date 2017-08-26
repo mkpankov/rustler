@@ -427,10 +427,13 @@ fn get_env() -> String {
 }
 
 fn get_data_path(env: &str) -> Result<PathBuf, io::Error> {
-    let cur_dir = env::current_dir()?;
     let mut data_dir = match &*env {
-        "dev" => cur_dir.clone(),
-        _ => PathBuf::from("tmp"),
+        "dev" => {
+            let cur_dir = env::current_dir()?;
+            cur_dir.clone()
+        }
+        "prod" => PathBuf::from("tmp"),
+        _ => unreachable!(),
     };
     data_dir.push("data");
     Ok(data_dir)
