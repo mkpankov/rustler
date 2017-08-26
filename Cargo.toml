@@ -5,6 +5,8 @@ version = "0.1.0"
 
 [dependencies]
 arrayvec = "0.4.0"
+chrono = "0.4.0"
+libc = "0.2.29"
 rocket = "0.3.2"
 rocket_codegen = "0.3.2"
 rocket_contrib = "0.3.2"

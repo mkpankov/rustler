@@ -1,7 +1,8 @@
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
 
-extern crate arrayvec;
+extern crate chrono;
+extern crate libc;
 extern crate rocket;
 extern crate rocket_contrib;
 extern crate serde;
@@ -9,6 +10,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
 
+use chrono::{DateTime, NaiveDateTime, Utc};
 use rocket::State;
 use rocket_contrib::Json;
 
@@ -55,7 +57,7 @@ fn users_visits(
 
     let result_visits = if let Some(params) = params {
         let from_date_visits = user_visits.filter(|v| if let Some(from_date) = params.from_date {
-            if from_date > v.visited_at {
+            if from_date < v.visited_at {
                 true
             } else {
                 false
@@ -131,7 +133,13 @@ fn locations(id: u32, storage: State<Storage>) -> Option<Json<Location>> {
 }
 
 #[derive(FromForm)]
-struct LocationAvgParams {}
+struct LocationAvgParams {
+    from_date: Option<i32>,
+    to_date: Option<i32>,
+    from_age: Option<i32>,
+    to_age: Option<i32>,
+    gender: Option<String>,
+}
 
 #[get("/locations/<id>/avg")]
 fn locations_avg_no_params(id: u32, storage: State<Storage>) -> Option<Json<HashMap<String, f32>>> {
@@ -145,8 +153,100 @@ fn locations_avg(
     storage: State<Storage>,
 ) -> Option<Json<HashMap<String, f32>>> {
     let all_visits = &storage.visits;
+    let location_visits = all_visits.values().cloned().filter(|v| v.location == id);
 
-    Some(Json(HashMap::new()))
+    let result_visits: Vec<_> = if let Some(params) = params {
+        let from_date_visits =
+            location_visits.filter(|v| if let Some(from_date) = params.from_date {
+                if from_date > v.visited_at {
+                    true
+                } else {
+                    false
+                }
+            } else {
+                true
+            });
+
+        let to_date_visits = from_date_visits.filter(|v| if let Some(to_date) = params.to_date {
+            if to_date > v.visited_at {
+                true
+            } else {
+                false
+            }
+        } else {
+            true
+        });
+
+        let from_age_visits = to_date_visits.filter(|v| if let Some(from_age) = params.from_age {
+            let user = &storage.users.get(&v.user).unwrap();
+            let birth_date_timestamp = user.birth_date;
+            let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
+            let birth_date = DateTime::<Utc>::from_utc(birth_date, Utc);
+            let now = Utc::now();
+            let age = now.signed_duration_since(birth_date);
+            let age_years = age.num_days() / 365;
+
+            if from_age < age_years as i32 {
+                true
+            } else {
+                false
+            }
+        } else {
+            true
+        });
+
+        let to_age_visits = from_age_visits.filter(|v| if let Some(to_age) = params.to_age {
+            let user = &storage.users.get(&v.user).unwrap();
+            let birth_date_timestamp = user.birth_date;
+            let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
+            let birth_date = DateTime::<Utc>::from_utc(birth_date, Utc);
+            let now = Utc::now();
+            let age = now.signed_duration_since(birth_date);
+            let age_years = age.num_days() / 365;
+
+            if to_age > age_years as i32 {
+                true
+            } else {
+                false
+            }
+        } else {
+            true
+        });
+
+        let final_visits = to_age_visits.filter(|v| if let Some(ref gender) = params.gender {
+            let user = &storage.users.get(&v.user).unwrap();
+            let reference_gender = &user.gender;
+
+            let parsed_gender = match gender.as_ref() {
+                "m" => Gender::Male,
+                "f" => Gender::Female,
+                _ => unreachable!(),
+            };
+            if parsed_gender == *reference_gender {
+                true
+            } else {
+                false
+            }
+        } else {
+            true
+        });
+
+        final_visits.collect()
+    } else {
+        location_visits.collect()
+    };
+
+    let marks = result_visits.iter().map(|v| v.mark);
+    let mut sum: usize = 0;
+    for v in marks {
+        sum += v as usize;
+    }
+    let avg_mark: f32 = sum as f32 / result_visits.len() as f32;
+    let avg_mark_rounded = (avg_mark * 10000.).round() / 10000.;
+
+    let mut result = HashMap::new();
+    result.insert("avg".to_owned(), avg_mark_rounded);
+    Some(Json(result))
 }
 
 #[post("/locations/<id>")]
@@ -259,7 +359,7 @@ fn input_data(data_path: &Path) -> Result<Storage, io::Error> {
     })
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 enum Gender {
     #[serde(rename = "m")]
     Male,
@@ -313,6 +413,7 @@ fn work() -> Result<(), Box<Error>> {
                 visits,
                 users_visits_no_params,
                 users_visits,
+                locations_avg_no_params,
                 locations_avg,
                 users_update,
                 locations_update,
