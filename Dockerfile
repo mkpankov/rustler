@@ -22,9 +22,7 @@ ENV ROCKET_ENV=prod
 
 ENV RUST_BACKTRACE=1
 
-WORKDIR /tmp/data
-
-CMD unzip data.zip
+ENV ENVIRONMENT=prod
 
 WORKDIR $HOME/rustler
 
