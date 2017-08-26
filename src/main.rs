@@ -285,7 +285,7 @@ fn locations_update(
     id: u32,
     location: Json<LocationUpdate>,
     storage: State<RwLock<Storage>>,
-) -> Option<Json<()>> {
+) -> Option<Json<HashMap<(), ()>>> {
     let storage = &mut *storage.write().unwrap();
     let location_update = location.0;
 
@@ -303,7 +303,7 @@ fn locations_update(
         }
         Entry::Vacant(_) => return None,
     }
-    Some(Json(()))
+    Some(Json(HashMap::new()))
 }
 
 #[post("/locations/new")]
@@ -322,7 +322,7 @@ fn visits_update(
     id: u32,
     visit: Json<VisitUpdate>,
     storage: State<RwLock<Storage>>,
-) -> Option<Json<()>> {
+) -> Option<Json<HashMap<(), ()>>> {
     let storage = &mut *storage.write().unwrap();
     let visit_update = visit.0;
 
@@ -340,7 +340,7 @@ fn visits_update(
         }
         Entry::Vacant(_) => return None,
     }
-    Some(Json(()))
+    Some(Json(HashMap::new()))
 }
 
 #[get("/visits/new")]
