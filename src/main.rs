@@ -23,6 +23,9 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
+#[cfg(test)]
+mod tests;
+
 #[get("/users/<id>")]
 fn users(id: u32, storage: State<RwLock<Storage>>) -> Option<Json<User>> {
     let storage = &*storage.read().unwrap();
