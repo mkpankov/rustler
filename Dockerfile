@@ -12,9 +12,19 @@ RUN yum install -y gcc make unzip
 
 WORKDIR rustler
 
-ADD . ./
+COPY Cargo.toml Cargo.lock ./
+
+COPY src/dummy.rs src/dummy.rs
+
+RUN cargo build --release --lib
+
+COPY src src
 
 RUN cargo build --release
+
+RUN cp target/release/rustler .
+
+RUN cargo clean
 
 EXPOSE 80
 
@@ -24,6 +34,4 @@ ENV RUST_BACKTRACE=1
 
 ENV ENVIRONMENT=prod
 
-WORKDIR $HOME/rustler
-
-CMD target/release/rustler
+CMD rustler
