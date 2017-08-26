@@ -15,14 +15,17 @@ use rocket::State;
 use rocket_contrib::Json;
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::env;
 use std::error::Error;
 use std::io::{self, Read};
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 
 #[get("/users/<id>")]
-fn users(id: u32, storage: State<Storage>) -> Option<Json<User>> {
+fn users(id: u32, storage: State<RwLock<Storage>>) -> Option<Json<User>> {
+    let storage = &*storage.read().unwrap();
     storage.users.get(&id).map(|entity| Json(entity.clone()))
 }
 
@@ -37,7 +40,7 @@ struct UsersVisitsParams {
 #[get("/users/<id>/visits")]
 fn users_visits_no_params(
     id: u32,
-    storage: State<Storage>,
+    storage: State<RwLock<Storage>>,
 ) -> Option<Json<HashMap<String, Vec<Visit>>>> {
     users_visits(id, None, storage)
 }
@@ -46,8 +49,9 @@ fn users_visits_no_params(
 fn users_visits(
     id: u32,
     params: Option<UsersVisitsParams>,
-    storage: State<Storage>,
+    storage: State<RwLock<Storage>>,
 ) -> Option<Json<HashMap<String, Vec<Visit>>>> {
+    let storage = &*storage.read().unwrap();
     let all_visits = &storage.visits;
     let user_visits = all_visits
         .iter()
@@ -114,9 +118,31 @@ fn users_visits(
     Some(Json(response))
 }
 
-#[post("/users/<id>")]
-fn users_update(id: u32) -> String {
-    format!("user {} update", id)
+#[post("/users/<id>", data = "<user>")]
+fn users_update(
+    id: u32,
+    user: Json<UserUpdate>,
+    storage: State<RwLock<Storage>>,
+) -> Option<Json<HashMap<(), ()>>> {
+    let storage = &mut *storage.write().unwrap();
+    let user_update = user.0;
+
+    let users = &mut storage.users;
+    let user_entry = users.entry(id);
+    match user_entry {
+        Entry::Occupied(e) => {
+            *e.into_mut() = User {
+                id: id,
+                email: user_update.email,
+                birth_date: user_update.birth_date,
+                first_name: user_update.first_name,
+                last_name: user_update.last_name,
+                gender: user_update.gender,
+            }
+        }
+        Entry::Vacant(_) => return None,
+    }
+    Some(Json(HashMap::new()))
 }
 
 #[post("/users/new")]
@@ -125,7 +151,8 @@ fn users_new() -> String {
 }
 
 #[get("/locations/<id>")]
-fn locations(id: u32, storage: State<Storage>) -> Option<Json<Location>> {
+fn locations(id: u32, storage: State<RwLock<Storage>>) -> Option<Json<Location>> {
+    let storage = &*storage.read().unwrap();
     storage
         .locations
         .get(&id)
@@ -142,7 +169,10 @@ struct LocationAvgParams {
 }
 
 #[get("/locations/<id>/avg")]
-fn locations_avg_no_params(id: u32, storage: State<Storage>) -> Option<Json<HashMap<String, f32>>> {
+fn locations_avg_no_params(
+    id: u32,
+    storage: State<RwLock<Storage>>,
+) -> Option<Json<HashMap<String, f32>>> {
     locations_avg(id, None, storage)
 }
 
@@ -150,8 +180,9 @@ fn locations_avg_no_params(id: u32, storage: State<Storage>) -> Option<Json<Hash
 fn locations_avg(
     id: u32,
     params: Option<LocationAvgParams>,
-    storage: State<Storage>,
+    storage: State<RwLock<Storage>>,
 ) -> Option<Json<HashMap<String, f32>>> {
+    let storage = &*storage.read().unwrap();
     let all_visits = &storage.visits;
     let location_visits = all_visits.values().cloned().filter(|v| v.location == id);
 
@@ -249,9 +280,30 @@ fn locations_avg(
     Some(Json(result))
 }
 
-#[post("/locations/<id>")]
-fn locations_update(id: u32) -> String {
-    format!("location {} update", id)
+#[post("/locations/<id>", data = "<location>")]
+fn locations_update(
+    id: u32,
+    location: Json<LocationUpdate>,
+    storage: State<RwLock<Storage>>,
+) -> Option<Json<()>> {
+    let storage = &mut *storage.write().unwrap();
+    let location_update = location.0;
+
+    let locations = &mut storage.locations;
+    let location_entry = locations.entry(id);
+    match location_entry {
+        Entry::Occupied(e) => {
+            *e.into_mut() = Location {
+                id: id,
+                city: location_update.city,
+                country: location_update.country,
+                distance: location_update.distance,
+                place: location_update.place,
+            };
+        }
+        Entry::Vacant(_) => return None,
+    }
+    Some(Json(()))
 }
 
 #[post("/locations/new")]
@@ -260,13 +312,35 @@ fn locations_new() -> String {
 }
 
 #[get("/visits/<id>")]
-fn visits(id: u32, storage: State<Storage>) -> Option<Json<Visit>> {
+fn visits(id: u32, storage: State<RwLock<Storage>>) -> Option<Json<Visit>> {
+    let storage = &*storage.read().unwrap();
     storage.visits.get(&id).map(|entity| Json(entity.clone()))
 }
 
-#[post("/visits/<id>")]
-fn visits_update(id: u32) -> String {
-    format!("visit {} update", id)
+#[post("/visits/<id>", data = "<visit>")]
+fn visits_update(
+    id: u32,
+    visit: Json<VisitUpdate>,
+    storage: State<RwLock<Storage>>,
+) -> Option<Json<()>> {
+    let storage = &mut *storage.write().unwrap();
+    let visit_update = visit.0;
+
+    let visits = &mut storage.visits;
+    let visit_entry = visits.entry(id);
+    match visit_entry {
+        Entry::Occupied(e) => {
+            *e.into_mut() = Visit {
+                id: id,
+                location: visit_update.location,
+                mark: visit_update.mark,
+                user: visit_update.user,
+                visited_at: visit_update.visited_at,
+            };
+        }
+        Entry::Vacant(_) => return None,
+    }
+    Some(Json(()))
 }
 
 #[get("/visits/new")]
@@ -378,7 +452,25 @@ struct User {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+struct UserUpdate {
+    email: String,      // [char; 100]
+    first_name: String, // [char; 50]
+    last_name: String,  // [char; 50]
+    gender: Gender,
+    birth_date: i32,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 struct Location {
+    id: u32,
+    place: String,
+    country: String, // [char; 50]
+    city: String,    // [char; 50]
+    distance: u32,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+struct LocationUpdate {
     id: u32,
     place: String,
     country: String, // [char; 50]
@@ -395,6 +487,14 @@ struct Visit {
     mark: u8,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+struct VisitUpdate {
+    location: u32,
+    user: u32,
+    visited_at: i32,
+    mark: u8,
+}
+
 fn work() -> Result<(), Box<Error>> {
     let env = get_env();
     let data_path = get_data_path(&env).unwrap();
@@ -402,9 +502,10 @@ fn work() -> Result<(), Box<Error>> {
     options_path.push("options.txt");
     let _options = read_options(&options_path);
     let data = input_data(&data_path).unwrap();
+    let data_locked = RwLock::new(data);
 
     rocket::ignite()
-        .manage(data)
+        .manage(data_locked)
         .mount(
             "/",
             routes![
@@ -418,6 +519,9 @@ fn work() -> Result<(), Box<Error>> {
                 users_update,
                 locations_update,
                 visits_update,
+                users_new,
+                locations_new,
+                visits_new,
             ],
         )
         .launch();
