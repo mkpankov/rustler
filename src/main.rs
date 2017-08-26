@@ -459,6 +459,7 @@ fn input_data(data_path: &Path) -> Result<Storage, io::Error> {
             data_file_name.push_str(".json");
             let data_file_path = data_path.join(data_file_name);
 
+            println!("Reading data file: {:?}", data_file_path);
             let maybe_data_file = File::open(data_file_path);
             let mut data_file = match maybe_data_file {
                 Ok(f) => f,
@@ -466,7 +467,7 @@ fn input_data(data_path: &Path) -> Result<Storage, io::Error> {
             };
             let mut data = String::new();
             data_file.read_to_string(&mut data).unwrap();
-            // TODO: Other entity types
+
             match &*template {
                 &"users_" => {
                     let mut users: HashMap<String, Vec<User>> =
