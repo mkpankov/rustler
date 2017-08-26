@@ -145,9 +145,28 @@ fn users_update(
     Some(Json(HashMap::new()))
 }
 
-#[post("/users/new")]
-fn users_new() -> String {
-    format!("user new")
+#[post("/users/new", data = "<user>")]
+fn users_new(user: Json<User>, storage: State<RwLock<Storage>>) -> Option<Json<HashMap<(), ()>>> {
+    let storage = &mut *storage.write().unwrap();
+    let user = user.0;
+    let id = user.id;
+
+    let users = &mut storage.users;
+    let user_entry = users.entry(id);
+    match user_entry {
+        Entry::Occupied(_) => return None,
+        Entry::Vacant(e) => {
+            e.insert(User {
+                id: id,
+                email: user.email,
+                birth_date: user.birth_date,
+                first_name: user.first_name,
+                last_name: user.last_name,
+                gender: user.gender,
+            });
+        }
+    }
+    Some(Json(HashMap::new()))
 }
 
 #[get("/locations/<id>")]
@@ -306,9 +325,30 @@ fn locations_update(
     Some(Json(HashMap::new()))
 }
 
-#[post("/locations/new")]
-fn locations_new() -> String {
-    format!("locations new")
+#[post("/locations/new", data = "<location>")]
+fn locations_new(
+    location: Json<Location>,
+    storage: State<RwLock<Storage>>,
+) -> Option<Json<HashMap<(), ()>>> {
+    let storage = &mut *storage.write().unwrap();
+    let location = location.0;
+    let id = location.id;
+
+    let locations = &mut storage.locations;
+    let location_entry = locations.entry(id);
+    match location_entry {
+        Entry::Occupied(_) => return None,
+        Entry::Vacant(e) => {
+            e.insert(Location {
+                id: id,
+                city: location.city,
+                country: location.country,
+                distance: location.distance,
+                place: location.place,
+            });
+        }
+    }
+    Some(Json(HashMap::new()))
 }
 
 #[get("/visits/<id>")]
@@ -343,9 +383,30 @@ fn visits_update(
     Some(Json(HashMap::new()))
 }
 
-#[get("/visits/new")]
-fn visits_new() -> String {
-    format!("visit new")
+#[post("/visits/new", data = "<visit>")]
+fn visits_new(
+    visit: Json<Visit>,
+    storage: State<RwLock<Storage>>,
+) -> Option<Json<HashMap<(), ()>>> {
+    let storage = &mut *storage.write().unwrap();
+    let visit = visit.0;
+    let id = visit.id;
+
+    let visits = &mut storage.visits;
+    let visit_entry = visits.entry(id);
+    match visit_entry {
+        Entry::Occupied(_) => return None,
+        Entry::Vacant(e) => {
+            e.insert(Visit {
+                id: id,
+                location: visit.location,
+                mark: visit.mark,
+                user: visit.user,
+                visited_at: visit.visited_at,
+            });
+        }
+    }
+    Some(Json(HashMap::new()))
 }
 
 fn get_env() -> String {
