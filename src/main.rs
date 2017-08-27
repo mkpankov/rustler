@@ -202,7 +202,7 @@ struct LocationAvgParams {
 fn locations_avg_no_params(
     id: u32,
     storage: State<RwLock<Storage>>,
-) -> Option<Json<HashMap<String, f32>>> {
+) -> Option<Json<HashMap<String, f64>>> {
     locations_avg(id, None, storage)
 }
 
@@ -211,7 +211,7 @@ fn locations_avg(
     id: u32,
     params: Option<LocationAvgParams>,
     storage: State<RwLock<Storage>>,
-) -> Option<Json<HashMap<String, f32>>> {
+) -> Option<Json<HashMap<String, f64>>> {
     let storage = &*storage.read().unwrap();
     let all_visits = &storage.visits;
     let location_visits = all_visits.values().cloned().filter(|v| v.location == id);
@@ -302,8 +302,9 @@ fn locations_avg(
     for v in marks {
         sum += v as usize;
     }
-    let avg_mark: f32 = sum as f32 / result_visits.len() as f32;
-    let avg_mark_rounded = (avg_mark * 10000.).round() / 10000.;
+    let avg_mark: f64 = sum as f64 / result_visits.len() as f64;
+    let avg_mark_rounded = format!("{:.5}", avg_mark);
+    let avg_mark_rounded: f64 = avg_mark_rounded.parse().unwrap();
 
     let mut result = HashMap::new();
     result.insert("avg".to_owned(), avg_mark_rounded);
