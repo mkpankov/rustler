@@ -34,4 +34,4 @@ ENV RUST_BACKTRACE=1
 
 ENV ENVIRONMENT=prod
 
-CMD rustler
+CMD ./rustler
