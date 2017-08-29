@@ -238,8 +238,9 @@ struct LocationAvgParams {
 fn locations_avg_no_params(
     id: u32,
     storage: State<RwLock<Storage>>,
+    options: State<Options>,
 ) -> Result<Json<HashMap<String, f64>>, Failure> {
-    locations_avg(id, None, storage)
+    locations_avg(id, None, storage, options)
 }
 
 #[get("/locations/<id>/avg?<params>")]
@@ -247,6 +248,7 @@ fn locations_avg(
     id: u32,
     params: Option<LocationAvgParams>,
     storage: State<RwLock<Storage>>,
+    options: State<Options>,
 ) -> Result<Json<HashMap<String, f64>>, Failure> {
     let storage = &*storage.read().unwrap();
     let all_locations = &storage.locations;
@@ -289,10 +291,14 @@ fn locations_avg(
 
         let from_age_visits = to_date_visits.filter(|v| if let Some(from_age) = params.from_age {
             let user = &storage.users.get(&v.user).unwrap();
+
             let birth_date_timestamp = user.birth_date;
             let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
             let birth_date = DateTime::<Utc>::from_utc(birth_date, Utc);
-            let now = Utc::now();
+
+            let now = NaiveDateTime::from_timestamp(options.now as i64, 0);
+            let now = DateTime::<Utc>::from_utc(now, Utc);
+
             let age = now.signed_duration_since(birth_date);
             let age_years = age.num_days() / 365;
 
@@ -307,10 +313,14 @@ fn locations_avg(
 
         let to_age_visits = from_age_visits.filter(|v| if let Some(to_age) = params.to_age {
             let user = &storage.users.get(&v.user).unwrap();
+
             let birth_date_timestamp = user.birth_date;
             let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
             let birth_date = DateTime::<Utc>::from_utc(birth_date, Utc);
-            let now = Utc::now();
+
+            let now = NaiveDateTime::from_timestamp(options.now as i64, 0);
+            let now = DateTime::<Utc>::from_utc(now, Utc);
+
             let age = now.signed_duration_since(birth_date);
             let age_years = age.num_days() / 365;
 
@@ -501,11 +511,23 @@ fn get_data_dir_path(env: &str) -> Result<PathBuf, io::Error> {
     Ok(data_dir)
 }
 
-fn read_options(options_path: &Path) -> Result<String, io::Error> {
+fn read_options(options_path: &Path) -> Result<Options, io::Error> {
     let mut options_file = File::open(options_path).unwrap();
     let mut options_content = String::new();
     options_file.read_to_string(&mut options_content).unwrap();
-    Ok(options_content)
+    let options_content_lines: Vec<_> = options_content.split('\n').collect();
+    let timestamp_line = options_content_lines[0];
+    let timestamp: i32 = timestamp_line.parse().unwrap();
+    let mode_line = options_content_lines[1];
+    let mode = match mode_line {
+        "0" => Mode::Test,
+        "1" => Mode::Rating,
+        _ => unreachable!(),
+    };
+    Ok(Options {
+        now: timestamp,
+        mode: mode,
+    })
 }
 
 struct Storage {
@@ -698,6 +720,18 @@ struct VisitUpdate {
     mark: u8,
 }
 
+#[derive(Debug)]
+enum Mode {
+    Test,
+    Rating,
+}
+
+#[derive(Debug)]
+struct Options {
+    now: i32,
+    mode: Mode,
+}
+
 fn work() -> Result<(), Box<Error>> {
     let env = get_env();
     println!("env: {:?}", env);
@@ -706,7 +740,7 @@ fn work() -> Result<(), Box<Error>> {
 
     let mut options_path = data_dir_path.clone();
     options_path.push("options.txt");
-    let _options = read_options(&options_path);
+    let options = read_options(&options_path).unwrap();
     let data = match &*env {
         "prod" => input_data_prod(&data_dir_path).unwrap(),
         "dev" => input_data(&data_dir_path).unwrap(),
@@ -716,6 +750,7 @@ fn work() -> Result<(), Box<Error>> {
 
     rocket::ignite()
         .manage(data_locked)
+        .manage(options)
         .mount(
             "/",
             routes![
