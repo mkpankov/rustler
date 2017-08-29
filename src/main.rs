@@ -13,6 +13,8 @@ extern crate zip;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use rocket::State;
+use rocket::http::Status;
+use rocket::response::Failure;
 use rocket_contrib::Json;
 
 use std::collections::HashMap;
@@ -44,11 +46,18 @@ struct UsersVisitsParams {
     to_distance: Option<u32>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct VisitInfo {
+    mark: u8,
+    visited_at: i32,
+    place: String,
+}
+
 #[get("/users/<id>/visits")]
 fn users_visits_no_params(
     id: u32,
     storage: State<RwLock<Storage>>,
-) -> Option<Json<HashMap<String, Vec<Visit>>>> {
+) -> Result<Json<HashMap<String, Vec<VisitInfo>>>, Failure> {
     users_visits(id, None, storage)
 }
 
@@ -57,8 +66,14 @@ fn users_visits(
     id: u32,
     params: Option<UsersVisitsParams>,
     storage: State<RwLock<Storage>>,
-) -> Option<Json<HashMap<String, Vec<Visit>>>> {
+) -> Result<Json<HashMap<String, Vec<VisitInfo>>>, Failure> {
     let storage = &*storage.read().unwrap();
+    let all_users = &storage.users;
+    {
+        if let None = all_users.get(&id) {
+            return Err(Failure(Status::NotFound));
+        }
+    }
     let all_visits = &storage.visits;
     let user_visits = all_visits
         .iter()
@@ -66,7 +81,13 @@ fn users_visits(
         .cloned()
         .filter(|v| v.user == id);
 
-    let result_visits = if let Some(params) = params {
+    let mut result_visits = if let Some(params) = params {
+        if params.country.is_none() && params.from_date.is_none() && params.to_date.is_none() &&
+            params.to_distance.is_none()
+        {
+            return Err(Failure(Status::BadRequest));
+        }
+
         let from_date_visits = user_visits.filter(|v| if let Some(from_date) = params.from_date {
             if from_date < v.visited_at {
                 true
@@ -105,7 +126,7 @@ fn users_visits(
                 // FIXME: get rid of unwrap
                 let reference_distance = &storage.locations.get(&v.location).unwrap().distance;
 
-                if to_distance < *reference_distance {
+                if to_distance > *reference_distance {
                     true
                 } else {
                     false
@@ -120,9 +141,24 @@ fn users_visits(
         user_visits.collect()
     };
 
+    result_visits.sort_by(|v1, v2| v1.visited_at.cmp(&v2.visited_at));
+    let result_visits = result_visits
+        .iter()
+        .map(|v| {
+            let locations = &storage.locations;
+            let location = &locations[&v.location];
+            let place = location.place.clone();
+            VisitInfo {
+                mark: v.mark,
+                place: place,
+                visited_at: v.visited_at,
+            }
+        })
+        .collect();
+
     let mut response = HashMap::new();
     response.insert("visits".to_owned(), result_visits);
-    Some(Json(response))
+    Ok(Json(response))
 }
 
 #[post("/users/<id>", data = "<user>")]
@@ -202,7 +238,7 @@ struct LocationAvgParams {
 fn locations_avg_no_params(
     id: u32,
     storage: State<RwLock<Storage>>,
-) -> Option<Json<HashMap<String, f64>>> {
+) -> Result<Json<HashMap<String, f64>>, Failure> {
     locations_avg(id, None, storage)
 }
 
@@ -211,15 +247,28 @@ fn locations_avg(
     id: u32,
     params: Option<LocationAvgParams>,
     storage: State<RwLock<Storage>>,
-) -> Option<Json<HashMap<String, f64>>> {
+) -> Result<Json<HashMap<String, f64>>, Failure> {
     let storage = &*storage.read().unwrap();
+    let all_locations = &storage.locations;
+    {
+        if let None = all_locations.get(&id) {
+            return Err(Failure(Status::NotFound));
+        }
+    }
     let all_visits = &storage.visits;
     let location_visits = all_visits.values().cloned().filter(|v| v.location == id);
 
     let result_visits: Vec<_> = if let Some(params) = params {
+        if params.from_age.is_none() && params.from_date.is_none() && params.gender.is_none() &&
+            params.to_age.is_none() &&
+            params.to_date.is_none()
+        {
+            return Err(Failure(Status::BadRequest));
+        }
+
         let from_date_visits =
             location_visits.filter(|v| if let Some(from_date) = params.from_date {
-                if from_date > v.visited_at {
+                if from_date < v.visited_at {
                     true
                 } else {
                     false
@@ -274,6 +323,13 @@ fn locations_avg(
             true
         });
 
+        if let Some(ref gender) = params.gender {
+            match gender.as_ref() {
+                "m" | "f" => {}
+                _ => return Err(Failure(Status::BadRequest)),
+            };
+        }
+
         let final_visits = to_age_visits.filter(|v| if let Some(ref gender) = params.gender {
             let user = &storage.users.get(&v.user).unwrap();
             let reference_gender = &user.gender;
@@ -302,13 +358,17 @@ fn locations_avg(
     for v in marks {
         sum += v as usize;
     }
-    let avg_mark: f64 = sum as f64 / result_visits.len() as f64;
+    let avg_mark: f64 = if sum > 0 {
+        sum as f64 / result_visits.len() as f64
+    } else {
+        0.0
+    };
     let avg_mark_rounded = format!("{:.5}", avg_mark);
     let avg_mark_rounded: f64 = avg_mark_rounded.parse().unwrap();
 
     let mut result = HashMap::new();
     result.insert("avg".to_owned(), avg_mark_rounded);
-    Some(Json(result))
+    Ok(Json(result))
 }
 
 #[post("/locations/<id>", data = "<location>")]
