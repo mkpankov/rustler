@@ -161,10 +161,17 @@ fn users_visits(
     Ok(Json(response))
 }
 
-#[post("/users/<id>", data = "<user>")]
+#[derive(FromForm)]
+struct QueryId {
+    #[form(field = "query_id")]
+    _query_id: u32,
+}
+
+#[post("/users/<id>?<query_id>", data = "<user>")]
 fn users_update(
     id: u32,
     user: Json<UserUpdate>,
+    query_id: QueryId,
     storage: State<RwLock<Storage>>,
 ) -> Option<Json<HashMap<(), ()>>> {
     let storage = &mut *storage.write().unwrap();
@@ -173,14 +180,21 @@ fn users_update(
     let users = &mut storage.users;
     let user_entry = users.entry(id);
     match user_entry {
-        Entry::Occupied(e) => {
-            *e.into_mut() = User {
-                id: id,
-                email: user_update.email,
-                birth_date: user_update.birth_date,
-                first_name: user_update.first_name,
-                last_name: user_update.last_name,
-                gender: user_update.gender,
+        Entry::Occupied(mut e) => {
+            if let Some(email) = user_update.email {
+                e.get_mut().email = email;
+            }
+            if let Some(birth_date) = user_update.birth_date {
+                e.get_mut().birth_date = birth_date;
+            }
+            if let Some(first_name) = user_update.first_name {
+                e.get_mut().first_name = first_name;
+            }
+            if let Some(last_name) = user_update.last_name {
+                e.get_mut().last_name = last_name;
+            }
+            if let Some(gender) = user_update.gender {
+                e.get_mut().gender = gender;
             }
         }
         Entry::Vacant(_) => return None,
@@ -300,9 +314,9 @@ fn locations_avg(
             let now = DateTime::<Utc>::from_utc(now, Utc);
 
             let age = now.signed_duration_since(birth_date);
-            let age_years = age.num_days() / 365;
+            let age_years = age.num_days() as f64 / 365.2425;
 
-            if from_age < age_years as i32 {
+            if from_age < age_years.round() as i32 {
                 true
             } else {
                 false
@@ -322,9 +336,9 @@ fn locations_avg(
             let now = DateTime::<Utc>::from_utc(now, Utc);
 
             let age = now.signed_duration_since(birth_date);
-            let age_years = age.num_days() / 365;
+            let age_years = age.num_days() as f64 / 365.2425;
 
-            if to_age > age_years as i32 {
+            if to_age > age_years.round() as i32 {
                 true
             } else {
                 false
@@ -393,14 +407,19 @@ fn locations_update(
     let locations = &mut storage.locations;
     let location_entry = locations.entry(id);
     match location_entry {
-        Entry::Occupied(e) => {
-            *e.into_mut() = Location {
-                id: id,
-                city: location_update.city,
-                country: location_update.country,
-                distance: location_update.distance,
-                place: location_update.place,
-            };
+        Entry::Occupied(mut e) => {
+            if let Some(city) = location_update.city {
+                e.get_mut().city = city;
+            }
+            if let Some(country) = location_update.country {
+                e.get_mut().country = country;
+            }
+            if let Some(distance) = location_update.distance {
+                e.get_mut().distance = distance;
+            }
+            if let Some(place) = location_update.place {
+                e.get_mut().place = place;
+            }
         }
         Entry::Vacant(_) => return None,
     }
@@ -451,14 +470,19 @@ fn visits_update(
     let visits = &mut storage.visits;
     let visit_entry = visits.entry(id);
     match visit_entry {
-        Entry::Occupied(e) => {
-            *e.into_mut() = Visit {
-                id: id,
-                location: visit_update.location,
-                mark: visit_update.mark,
-                user: visit_update.user,
-                visited_at: visit_update.visited_at,
+        Entry::Occupied(mut e) => {
+            if let Some(location) = visit_update.location {
+                e.get_mut().location = location;
             };
+            if let Some(mark) = visit_update.mark {
+                e.get_mut().mark = mark;
+            }
+            if let Some(user) = visit_update.user {
+                e.get_mut().user = user;
+            }
+            if let Some(visited_at) = visit_update.visited_at {
+                e.get_mut().visited_at = visited_at;
+            }
         }
         Entry::Vacant(_) => return None,
     }
@@ -518,6 +542,7 @@ fn read_options(options_path: &Path) -> Result<Options, io::Error> {
     let options_content_lines: Vec<_> = options_content.split('\n').collect();
     let timestamp_line = options_content_lines[0];
     let timestamp: i32 = timestamp_line.parse().unwrap();
+    println!("now: {}", timestamp);
     let mode_line = options_content_lines[1];
     let mode = match mode_line {
         "0" => Mode::Test,
@@ -678,11 +703,11 @@ struct User {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct UserUpdate {
-    email: String,      // [char; 100]
-    first_name: String, // [char; 50]
-    last_name: String,  // [char; 50]
-    gender: Gender,
-    birth_date: i32,
+    email: Option<String>,      // [char; 100]
+    first_name: Option<String>, // [char; 50]
+    last_name: Option<String>,  // [char; 50]
+    gender: Option<Gender>,
+    birth_date: Option<i32>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -696,11 +721,11 @@ struct Location {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct LocationUpdate {
-    id: u32,
-    place: String,
-    country: String, // [char; 50]
-    city: String,    // [char; 50]
-    distance: u32,
+    place: Option<String>,
+    country: Option<String>, // [char; 50]
+    city: Option<String>,    // [char; 50]
+    distance: Option<u32>,
+    _query_id: Option<u32>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -714,10 +739,10 @@ struct Visit {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct VisitUpdate {
-    location: u32,
-    user: u32,
-    visited_at: i32,
-    mark: u8,
+    location: Option<u32>,
+    user: Option<u32>,
+    visited_at: Option<i32>,
+    mark: Option<u8>,
 }
 
 #[derive(Debug)]
