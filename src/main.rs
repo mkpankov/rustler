@@ -393,10 +393,11 @@ fn locations_avg(
     Ok(Json(result))
 }
 
-#[post("/locations/<id>", data = "<location>")]
+#[post("/locations/<id>?<query_id>", data = "<location>")]
 fn locations_update(
     id: u32,
     location: Json<LocationUpdate>,
+    query_id: QueryId,
     storage: State<Storage>,
 ) -> Option<Json<HashMap<(), ()>>> {
     let location_update = location.0;
@@ -458,10 +459,11 @@ fn visits(id: u32, storage: State<Storage>) -> Option<Json<Visit>> {
         .map(|entity| Json(entity.clone()))
 }
 
-#[post("/visits/<id>", data = "<visit>")]
+#[post("/visits/<id>?<query_id>", data = "<visit>")]
 fn visits_update(
     id: u32,
     visit: Json<VisitUpdate>,
+    query_id: QueryId,
     storage: State<Storage>,
 ) -> Option<Json<HashMap<(), ()>>> {
     let visit_update = visit.0;
@@ -720,7 +722,6 @@ struct LocationUpdate {
     country: Option<String>, // [char; 50]
     city: Option<String>,    // [char; 50]
     distance: Option<u32>,
-    _query_id: Option<u32>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
