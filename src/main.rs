@@ -30,9 +30,9 @@ use std::sync::RwLock;
 mod tests;
 
 #[get("/users/<id>")]
-fn users(id: u32, storage: State<RwLock<Storage>>) -> Option<Json<User>> {
-    let storage = &*storage.read().unwrap();
-    storage.users.get(&id).map(|entity| Json(entity.clone()))
+fn users(id: u32, storage: State<Storage>) -> Option<Json<User>> {
+    let users = &*storage.users.read().unwrap();
+    users.get(&id).map(|entity| Json(entity.clone()))
 }
 
 #[derive(Serialize, Deserialize, FromForm)]
@@ -56,7 +56,7 @@ struct VisitInfo {
 #[get("/users/<id>/visits")]
 fn users_visits_no_params(
     id: u32,
-    storage: State<RwLock<Storage>>,
+    storage: State<Storage>,
 ) -> Result<Json<HashMap<String, Vec<VisitInfo>>>, Failure> {
     users_visits(id, None, storage)
 }
@@ -65,16 +65,15 @@ fn users_visits_no_params(
 fn users_visits(
     id: u32,
     params: Option<UsersVisitsParams>,
-    storage: State<RwLock<Storage>>,
+    storage: State<Storage>,
 ) -> Result<Json<HashMap<String, Vec<VisitInfo>>>, Failure> {
-    let storage = &*storage.read().unwrap();
-    let all_users = &storage.users;
+    let all_users = &*storage.users.read().unwrap();
     {
         if let None = all_users.get(&id) {
             return Err(Failure(Status::NotFound));
         }
     }
-    let all_visits = &storage.visits;
+    let all_visits = &*storage.visits.read().unwrap();
     let user_visits = all_visits
         .iter()
         .map(|(_, v)| v)
@@ -110,7 +109,8 @@ fn users_visits(
 
         let country_visits = to_date_visits.filter(|v| if let Some(ref country) = params.country {
             // FIXME: get rid of unwrap
-            let reference_country = &storage.locations.get(&v.location).unwrap().country;
+            let locations = &storage.locations.read().unwrap();
+            let reference_country = &locations.get(&v.location).unwrap().country;
 
             if country == reference_country {
                 true
@@ -124,9 +124,10 @@ fn users_visits(
         let to_distance_visits =
             country_visits.filter(|v| if let Some(to_distance) = params.to_distance {
                 // FIXME: get rid of unwrap
-                let reference_distance = &storage.locations.get(&v.location).unwrap().distance;
+                let locations = &storage.locations.read().unwrap();
+                let reference_distance = locations.get(&v.location).unwrap().distance;
 
-                if to_distance > *reference_distance {
+                if to_distance > reference_distance {
                     true
                 } else {
                     false
@@ -146,7 +147,7 @@ fn users_visits(
         .iter()
         .map(|v| {
             let locations = &storage.locations;
-            let location = &locations[&v.location];
+            let location = &locations.read().unwrap()[&v.location];
             let place = location.place.clone();
             VisitInfo {
                 mark: v.mark,
@@ -172,12 +173,11 @@ fn users_update(
     id: u32,
     user: Json<UserUpdate>,
     query_id: QueryId,
-    storage: State<RwLock<Storage>>,
+    storage: State<Storage>,
 ) -> Option<Json<HashMap<(), ()>>> {
-    let storage = &mut *storage.write().unwrap();
     let user_update = user.0;
 
-    let users = &mut storage.users;
+    let users = &mut *storage.users.write().unwrap();
     let user_entry = users.entry(id);
     match user_entry {
         Entry::Occupied(mut e) => {
@@ -203,12 +203,11 @@ fn users_update(
 }
 
 #[post("/users/new", data = "<user>")]
-fn users_new(user: Json<User>, storage: State<RwLock<Storage>>) -> Option<Json<HashMap<(), ()>>> {
-    let storage = &mut *storage.write().unwrap();
+fn users_new(user: Json<User>, storage: State<Storage>) -> Option<Json<HashMap<(), ()>>> {
     let user = user.0;
     let id = user.id;
 
-    let users = &mut storage.users;
+    let users = &mut *storage.users.write().unwrap();
     let user_entry = users.entry(id);
     match user_entry {
         Entry::Occupied(_) => return None,
@@ -227,12 +226,9 @@ fn users_new(user: Json<User>, storage: State<RwLock<Storage>>) -> Option<Json<H
 }
 
 #[get("/locations/<id>")]
-fn locations(id: u32, storage: State<RwLock<Storage>>) -> Option<Json<Location>> {
-    let storage = &*storage.read().unwrap();
-    storage
-        .locations
-        .get(&id)
-        .map(|entity| Json(entity.clone()))
+fn locations(id: u32, storage: State<Storage>) -> Option<Json<Location>> {
+    let locations = &*storage.locations.read().unwrap();
+    locations.get(&id).map(|entity| Json(entity.clone()))
 }
 
 #[derive(FromForm)]
@@ -251,7 +247,7 @@ struct LocationAvgParams {
 #[get("/locations/<id>/avg")]
 fn locations_avg_no_params(
     id: u32,
-    storage: State<RwLock<Storage>>,
+    storage: State<Storage>,
     options: State<Options>,
 ) -> Result<Json<HashMap<String, f64>>, Failure> {
     locations_avg(id, None, storage, options)
@@ -261,17 +257,16 @@ fn locations_avg_no_params(
 fn locations_avg(
     id: u32,
     params: Option<LocationAvgParams>,
-    storage: State<RwLock<Storage>>,
+    storage: State<Storage>,
     options: State<Options>,
 ) -> Result<Json<HashMap<String, f64>>, Failure> {
-    let storage = &*storage.read().unwrap();
-    let all_locations = &storage.locations;
+    let all_locations = &storage.locations.read().unwrap();
     {
         if let None = all_locations.get(&id) {
             return Err(Failure(Status::NotFound));
         }
     }
-    let all_visits = &storage.visits;
+    let all_visits = &storage.visits.read().unwrap();
     let location_visits = all_visits.values().cloned().filter(|v| v.location == id);
 
     let result_visits: Vec<_> = if let Some(params) = params {
@@ -304,7 +299,8 @@ fn locations_avg(
         });
 
         let from_age_visits = to_date_visits.filter(|v| if let Some(from_age) = params.from_age {
-            let user = &storage.users.get(&v.user).unwrap();
+            let users = &storage.users.read().unwrap();
+            let user = users.get(&v.user).unwrap();
 
             let birth_date_timestamp = user.birth_date;
             let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
@@ -326,7 +322,8 @@ fn locations_avg(
         });
 
         let to_age_visits = from_age_visits.filter(|v| if let Some(to_age) = params.to_age {
-            let user = &storage.users.get(&v.user).unwrap();
+            let users = &storage.users.read().unwrap();
+            let user = users.get(&v.user).unwrap();
 
             let birth_date_timestamp = user.birth_date;
             let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
@@ -355,7 +352,8 @@ fn locations_avg(
         }
 
         let final_visits = to_age_visits.filter(|v| if let Some(ref gender) = params.gender {
-            let user = &storage.users.get(&v.user).unwrap();
+            let users = &storage.users.read().unwrap();
+            let user = users.get(&v.user).unwrap();
             let reference_gender = &user.gender;
 
             let parsed_gender = match gender.as_ref() {
@@ -399,12 +397,11 @@ fn locations_avg(
 fn locations_update(
     id: u32,
     location: Json<LocationUpdate>,
-    storage: State<RwLock<Storage>>,
+    storage: State<Storage>,
 ) -> Option<Json<HashMap<(), ()>>> {
-    let storage = &mut *storage.write().unwrap();
     let location_update = location.0;
 
-    let locations = &mut storage.locations;
+    let locations = &mut storage.locations.write().unwrap();
     let location_entry = locations.entry(id);
     match location_entry {
         Entry::Occupied(mut e) => {
@@ -429,13 +426,12 @@ fn locations_update(
 #[post("/locations/new", data = "<location>")]
 fn locations_new(
     location: Json<Location>,
-    storage: State<RwLock<Storage>>,
+    storage: State<Storage>,
 ) -> Option<Json<HashMap<(), ()>>> {
-    let storage = &mut *storage.write().unwrap();
     let location = location.0;
     let id = location.id;
 
-    let locations = &mut storage.locations;
+    let locations = &mut storage.locations.write().unwrap();
     let location_entry = locations.entry(id);
     match location_entry {
         Entry::Occupied(_) => return None,
@@ -453,21 +449,24 @@ fn locations_new(
 }
 
 #[get("/visits/<id>")]
-fn visits(id: u32, storage: State<RwLock<Storage>>) -> Option<Json<Visit>> {
-    let storage = &*storage.read().unwrap();
-    storage.visits.get(&id).map(|entity| Json(entity.clone()))
+fn visits(id: u32, storage: State<Storage>) -> Option<Json<Visit>> {
+    storage
+        .visits
+        .read()
+        .unwrap()
+        .get(&id)
+        .map(|entity| Json(entity.clone()))
 }
 
 #[post("/visits/<id>", data = "<visit>")]
 fn visits_update(
     id: u32,
     visit: Json<VisitUpdate>,
-    storage: State<RwLock<Storage>>,
+    storage: State<Storage>,
 ) -> Option<Json<HashMap<(), ()>>> {
-    let storage = &mut *storage.write().unwrap();
     let visit_update = visit.0;
 
-    let visits = &mut storage.visits;
+    let visits = &mut storage.visits.write().unwrap();
     let visit_entry = visits.entry(id);
     match visit_entry {
         Entry::Occupied(mut e) => {
@@ -490,15 +489,11 @@ fn visits_update(
 }
 
 #[post("/visits/new", data = "<visit>")]
-fn visits_new(
-    visit: Json<Visit>,
-    storage: State<RwLock<Storage>>,
-) -> Option<Json<HashMap<(), ()>>> {
-    let storage = &mut *storage.write().unwrap();
+fn visits_new(visit: Json<Visit>, storage: State<Storage>) -> Option<Json<HashMap<(), ()>>> {
     let visit = visit.0;
     let id = visit.id;
 
-    let visits = &mut storage.visits;
+    let visits = &mut storage.visits.write().unwrap();
     let visit_entry = visits.entry(id);
     match visit_entry {
         Entry::Occupied(_) => return None,
@@ -556,9 +551,9 @@ fn read_options(options_path: &Path) -> Result<Options, io::Error> {
 }
 
 struct Storage {
-    users: HashMap<u32, User>,
-    locations: HashMap<u32, Location>,
-    visits: HashMap<u32, Visit>,
+    users: RwLock<HashMap<u32, User>>,
+    locations: RwLock<HashMap<u32, Location>>,
+    visits: RwLock<HashMap<u32, Visit>>,
 }
 
 fn input_data(data_path: &Path) -> Result<Storage, io::Error> {
@@ -611,9 +606,9 @@ fn input_data(data_path: &Path) -> Result<Storage, io::Error> {
         }
     }
     Ok(Storage {
-        users: all_users,
-        locations: all_locations,
-        visits: all_visits,
+        users: RwLock::new(all_users),
+        locations: RwLock::new(all_locations),
+        visits: RwLock::new(all_visits),
     })
 }
 
@@ -677,9 +672,9 @@ fn input_data_prod(data_dir_path: &Path) -> Result<Storage, io::Error> {
     }
 
     Ok(Storage {
-        users: all_users,
-        locations: all_locations,
-        visits: all_visits,
+        users: RwLock::new(all_users),
+        locations: RwLock::new(all_locations),
+        visits: RwLock::new(all_visits),
     })
 }
 
@@ -771,10 +766,9 @@ fn work() -> Result<(), Box<Error>> {
         "dev" => input_data(&data_dir_path).unwrap(),
         _ => unreachable!(),
     };
-    let data_locked = RwLock::new(data);
 
     rocket::ignite()
-        .manage(data_locked)
+        .manage(data)
         .manage(options)
         .mount(
             "/",
