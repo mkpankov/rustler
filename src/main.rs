@@ -307,8 +307,26 @@ fn locations_avg(
             return Err(Failure(Status::NotFound));
         }
     }
+
+    if let Some(ref params) = params {
+        if let Some(ref gender) = params.gender {
+            match gender.as_ref() {
+                "m" | "f" => {}
+                _ => return Err(Failure(Status::BadRequest)),
+            };
+        }
+    }
+
     let all_visits = &storage.visits.read().unwrap();
-    let location_visits = all_visits.values().cloned().filter(|v| v.location == id);
+    let location_visits_ids = &storage.location_visits.read().unwrap();
+    let maybe_this_location_visits_ids = location_visits_ids.get(&id);
+    let location_visits = if let Some(this_location_visits_ids) = maybe_this_location_visits_ids {
+        this_location_visits_ids
+            .iter()
+            .map(|i| all_visits[&i].clone())
+    } else {
+        return Ok(Json(LocationAvg { avg: 0. }));
+    };
 
     let result_visits: Vec<_> = if let Some(params) = params {
         if params.from_age.is_none() && params.from_date.is_none() && params.gender.is_none() &&
@@ -369,13 +387,6 @@ fn locations_avg(
         } else {
             true
         });
-
-        if let Some(ref gender) = params.gender {
-            match gender.as_ref() {
-                "m" | "f" => {}
-                _ => return Err(Failure(Status::BadRequest)),
-            };
-        }
 
         let final_visits = to_age_visits.filter(|v| if let Some(ref gender) = params.gender {
             let users = &storage.users.read().unwrap();
@@ -504,6 +515,20 @@ fn visits_update(
     match visit_entry {
         Entry::Occupied(mut e) => {
             if visit_update.location != 0 {
+                let location_visits_ids = &mut storage.location_visits.write().unwrap();
+                let new_visit_location = visit_update.location;
+                let old_visit_location = e.get().location;
+
+                let old_location_visits_ids = location_visits_ids[&old_visit_location]
+                    .iter()
+                    .map(|visit_id| *visit_id)
+                    .filter(|visit_id| *visit_id != id)
+                    .collect();
+                let mut new_location_visits_ids = location_visits_ids[&new_visit_location].clone();
+                new_location_visits_ids.push(id);
+
+                location_visits_ids.insert(old_visit_location, old_location_visits_ids);
+                location_visits_ids.insert(new_visit_location, new_location_visits_ids);
                 e.get_mut().location = visit_update.location;
             };
             if visit_update.mark != 0 {
@@ -531,6 +556,14 @@ fn visits_new(visit: Json<Visit>, storage: State<Storage>) -> Option<Json<NewOrU
     match visit_entry {
         Entry::Occupied(_) => return None,
         Entry::Vacant(e) => {
+            let location_visits_ids = &mut storage.location_visits.write().unwrap();
+            let new_visit_location = visit.location;
+
+            let mut new_location_visits_ids = location_visits_ids[&new_visit_location].clone();
+            new_location_visits_ids.push(id);
+
+            location_visits_ids.insert(new_visit_location, new_location_visits_ids);
+
             e.insert(Visit {
                 id: id,
                 location: visit.location,
@@ -588,6 +621,7 @@ struct Storage {
     locations: RwLock<HashMap<u32, Location>>,
     visits: RwLock<HashMap<u32, Visit>>,
     ages: RwLock<HashMap<u32, i32>>,
+    location_visits: RwLock<HashMap<u32, Vec<u32>>>,
 }
 
 fn read_entities_from_file<T>(
@@ -597,6 +631,7 @@ fn read_entities_from_file<T>(
     all_locations: &mut HashMap<u32, Location>,
     all_visits: &mut HashMap<u32, Visit>,
     ages: &mut HashMap<u32, i32>,
+    location_visits: &mut HashMap<u32, Vec<u32>>,
     options: &Options,
 ) where
     T: Read,
@@ -624,8 +659,17 @@ fn read_entities_from_file<T>(
         }
         "visits_" => {
             let mut visits: HashMap<String, Vec<Visit>> = serde_json::from_str(&data).unwrap();
-            for v in visits.remove("visits").unwrap() {
-                all_visits.insert(v.id, v);
+            for visit in visits.remove("visits").unwrap() {
+                let location_visits_entry = location_visits.entry(visit.location);
+                match location_visits_entry {
+                    Entry::Occupied(mut e) => {
+                        e.get_mut().push(visit.id);
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(vec![visit.id]);
+                    }
+                }
+                all_visits.insert(visit.id, visit);
             }
         }
         _ => unreachable!(),
@@ -638,6 +682,7 @@ fn input_data(data_path: &Path, options: &Options) -> Result<Storage, io::Error>
     let mut all_locations = HashMap::new();
     let mut all_visits = HashMap::new();
     let mut ages = HashMap::new();
+    let mut location_visits = HashMap::new();
 
     for template in &entity_name_templates {
         let mut index = 1;
@@ -660,6 +705,7 @@ fn input_data(data_path: &Path, options: &Options) -> Result<Storage, io::Error>
                 &mut all_locations,
                 &mut all_visits,
                 &mut ages,
+                &mut location_visits,
                 &options,
             );
             index += 1;
@@ -671,6 +717,7 @@ fn input_data(data_path: &Path, options: &Options) -> Result<Storage, io::Error>
         locations: RwLock::new(all_locations),
         visits: RwLock::new(all_visits),
         ages: RwLock::new(ages),
+        location_visits: RwLock::new(location_visits),
     })
 }
 
@@ -680,6 +727,7 @@ fn input_data_prod(data_dir_path: &Path, options: &Options) -> Result<Storage, i
     let mut all_locations = HashMap::new();
     let mut all_visits = HashMap::new();
     let mut ages = HashMap::new();
+    let mut location_visits = HashMap::new();
 
     let data_file_path = data_dir_path.join("data.zip");
     let file = File::open(data_file_path).unwrap();
@@ -707,6 +755,7 @@ fn input_data_prod(data_dir_path: &Path, options: &Options) -> Result<Storage, i
                 &mut all_locations,
                 &mut all_visits,
                 &mut ages,
+                &mut location_visits,
                 &options,
             );
             index += 1;
@@ -718,6 +767,7 @@ fn input_data_prod(data_dir_path: &Path, options: &Options) -> Result<Storage, i
         locations: RwLock::new(all_locations),
         visits: RwLock::new(all_visits),
         ages: RwLock::new(ages),
+        location_visits: RwLock::new(location_visits),
     })
 }
 
