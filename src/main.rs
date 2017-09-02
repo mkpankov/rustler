@@ -11,12 +11,11 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate zip;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDateTime, Utc};
 use rocket::State;
 use rocket::http::Status;
 use rocket::response::Failure;
 use rocket_contrib::Json;
-use serde::{Deserialize, Deserializer};
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -38,13 +37,10 @@ fn users(id: u32, storage: State<Storage>) -> Option<Json<User>> {
 
 #[derive(Serialize, Deserialize, FromForm)]
 struct UsersVisitsParams {
-    #[form(field = "fromDate")]
-    from_date: Option<i32>,
-    #[form(field = "toDate")]
-    to_date: Option<i32>,
+    #[form(field = "fromDate")] from_date: Option<i32>,
+    #[form(field = "toDate")] to_date: Option<i32>,
     country: Option<String>,
-    #[form(field = "toDistance")]
-    to_distance: Option<u32>,
+    #[form(field = "toDistance")] to_distance: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -165,8 +161,7 @@ fn users_visits(
 
 #[derive(FromForm)]
 struct QueryId {
-    #[form(field = "query_id")]
-    _query_id: u32,
+    #[form(field = "query_id")] _query_id: u32,
 }
 
 #[post("/users/<id>?<query_id>", data = "<user>")]
@@ -234,14 +229,10 @@ fn locations(id: u32, storage: State<Storage>) -> Option<Json<Location>> {
 
 #[derive(FromForm)]
 struct LocationAvgParams {
-    #[form(field = "fromDate")]
-    from_date: Option<i32>,
-    #[form(field = "toDate")]
-    to_date: Option<i32>,
-    #[form(field = "fromAge")]
-    from_age: Option<i32>,
-    #[form(field = "toAge")]
-    to_age: Option<i32>,
+    #[form(field = "fromDate")] from_date: Option<i32>,
+    #[form(field = "toDate")] to_date: Option<i32>,
+    #[form(field = "fromAge")] from_age: Option<i32>,
+    #[form(field = "toAge")] to_age: Option<i32>,
     gender: Option<String>,
 }
 
@@ -272,8 +263,7 @@ fn locations_avg(
 
     let result_visits: Vec<_> = if let Some(params) = params {
         if params.from_age.is_none() && params.from_date.is_none() && params.gender.is_none() &&
-            params.to_age.is_none() &&
-            params.to_date.is_none()
+            params.to_age.is_none() && params.to_date.is_none()
         {
             return Err(Failure(Status::BadRequest));
         }
@@ -305,15 +295,33 @@ fn locations_avg(
 
             let birth_date_timestamp = user.birth_date;
             let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
-            let birth_date = DateTime::<Utc>::from_utc(birth_date, Utc);
 
             let now = NaiveDateTime::from_timestamp(options.now as i64, 0);
-            let now = DateTime::<Utc>::from_utc(now, Utc);
 
-            let age = now.signed_duration_since(birth_date);
-            let age_years = age.num_days() as f64 / 365.2425;
+            let birth_date_year = birth_date.year();
+            let now_year = now.year();
 
-            if from_age < age_years.round() as i32 {
+            let year_diff = now_year - birth_date_year;
+
+            let birth_date_in_year_month = birth_date.month();
+            let now_in_year_month = now.month();
+            let birth_date_in_year_day = birth_date.day();
+            let now_in_year_day = now.day();
+
+            let did_full_year_pass = if now_in_year_month > birth_date_in_year_month ||
+                (now_in_year_month == birth_date_in_year_month &&
+                    now_in_year_day >= birth_date_in_year_day)
+            {
+                true
+            } else {
+                false
+            };
+
+            let year_correction = if !did_full_year_pass { -1 } else { 0 };
+
+            let age = year_diff + year_correction;
+
+            if from_age <= age {
                 true
             } else {
                 false
@@ -328,15 +336,33 @@ fn locations_avg(
 
             let birth_date_timestamp = user.birth_date;
             let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
-            let birth_date = DateTime::<Utc>::from_utc(birth_date, Utc);
 
             let now = NaiveDateTime::from_timestamp(options.now as i64, 0);
-            let now = DateTime::<Utc>::from_utc(now, Utc);
 
-            let age = now.signed_duration_since(birth_date);
-            let age_years = age.num_days() as f64 / 365.2425;
+            let birth_date_year = birth_date.year();
+            let now_year = now.year();
 
-            if to_age > age_years.round() as i32 {
+            let year_diff = now_year - birth_date_year;
+
+            let birth_date_in_year_month = birth_date.month();
+            let now_in_year_month = now.month();
+            let birth_date_in_year_day = birth_date.day();
+            let now_in_year_day = now.day();
+
+            let did_full_year_pass = if now_in_year_month > birth_date_in_year_month ||
+                (now_in_year_month == birth_date_in_year_month &&
+                    now_in_year_day >= birth_date_in_year_day)
+            {
+                true
+            } else {
+                false
+            };
+
+            let year_correction = if !did_full_year_pass { -1 } else { 0 };
+
+            let age = year_diff + year_correction;
+
+            if to_age > age {
                 true
             } else {
                 false
@@ -559,7 +585,7 @@ struct Storage {
     visits: RwLock<HashMap<u32, Visit>>,
 }
 
-fn input_data(data_path: &Path) -> Result<Storage, io::Error> {
+fn input_data(data_path: &Path, options: &Options) -> Result<Storage, io::Error> {
     let entity_name_templates = ["users_", "locations_", "visits_"];
     let mut all_users = HashMap::new();
     let mut all_locations = HashMap::new();
@@ -684,10 +710,8 @@ fn input_data_prod(data_dir_path: &Path) -> Result<Storage, io::Error> {
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 enum Gender {
     Unknown,
-    #[serde(rename = "m")]
-    Male,
-    #[serde(rename = "f")]
-    Female,
+    #[serde(rename = "m")] Male,
+    #[serde(rename = "f")] Female,
 }
 
 impl Default for Gender {
@@ -708,16 +732,11 @@ struct User {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct UserUpdate {
-    #[serde(default)]
-    email: String, // [char; 100]
-    #[serde(default)]
-    first_name: String, // [char; 50]
-    #[serde(default)]
-    last_name: String, // [char; 50]
-    #[serde(default)]
-    gender: Gender,
-    #[serde(default)]
-    birth_date: i32,
+    #[serde(default)] email: String,      // [char; 100]
+    #[serde(default)] first_name: String, // [char; 50]
+    #[serde(default)] last_name: String,  // [char; 50]
+    #[serde(default)] gender: Gender,
+    #[serde(default)] birth_date: i32,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -731,14 +750,10 @@ struct Location {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct LocationUpdate {
-    #[serde(default)]
-    place: String,
-    #[serde(default)]
-    country: String, // [char; 50]
-    #[serde(default)]
-    city: String, // [char; 50]
-    #[serde(default)]
-    distance: u32,
+    #[serde(default)] place: String,
+    #[serde(default)] country: String, // [char; 50]
+    #[serde(default)] city: String,    // [char; 50]
+    #[serde(default)] distance: u32,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -752,14 +767,10 @@ struct Visit {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct VisitUpdate {
-    #[serde(default)]
-    location: u32,
-    #[serde(default)]
-    user: u32,
-    #[serde(default)]
-    visited_at: i32,
-    #[serde(default)]
-    mark: u8,
+    #[serde(default)] location: u32,
+    #[serde(default)] user: u32,
+    #[serde(default)] visited_at: i32,
+    #[serde(default)] mark: u8,
 }
 
 #[derive(Debug)]
@@ -785,7 +796,7 @@ fn work() -> Result<(), Box<Error>> {
     let options = read_options(&options_path).unwrap();
     let data = match &*env {
         "prod" => input_data_prod(&data_dir_path).unwrap(),
-        "dev" => input_data(&data_dir_path).unwrap(),
+        "dev" => input_data(&data_dir_path, &options).unwrap(),
         _ => unreachable!(),
     };
 
