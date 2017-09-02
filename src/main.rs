@@ -2,16 +2,14 @@
 #![plugin(rocket_codegen)]
 
 extern crate chrono;
-extern crate libc;
 extern crate rocket;
 extern crate rocket_contrib;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
 extern crate zip;
 
-use chrono::{DateTime, Datelike, NaiveDateTime, Utc};
+use chrono::{Datelike, NaiveDateTime};
 use rocket::State;
 use rocket::http::Status;
 use rocket::response::Failure;
@@ -170,6 +168,7 @@ fn users_update(
     user: Json<UserUpdate>,
     query_id: QueryId,
     storage: State<Storage>,
+    options: State<Options>,
 ) -> Option<Json<HashMap<(), ()>>> {
     let user_update = user.0;
 
@@ -182,6 +181,12 @@ fn users_update(
             }
             if user_update.birth_date != 0 {
                 e.get_mut().birth_date = user_update.birth_date;
+
+                let ages = &mut *storage.ages.write().unwrap();
+                ages.insert(
+                    id,
+                    calculate_age_from_timestamp(user_update.birth_date, options.now),
+                );
             }
             if user_update.first_name != "" {
                 e.get_mut().first_name = user_update.first_name;
@@ -199,11 +204,16 @@ fn users_update(
 }
 
 #[post("/users/new", data = "<user>")]
-fn users_new(user: Json<User>, storage: State<Storage>) -> Option<Json<HashMap<(), ()>>> {
+fn users_new(
+    user: Json<User>,
+    storage: State<Storage>,
+    options: State<Options>,
+) -> Option<Json<HashMap<(), ()>>> {
     let user = user.0;
     let id = user.id;
 
     let users = &mut *storage.users.write().unwrap();
+    let ages = &mut *storage.ages.write().unwrap();
     let user_entry = users.entry(id);
     match user_entry {
         Entry::Occupied(_) => return None,
@@ -216,6 +226,10 @@ fn users_new(user: Json<User>, storage: State<Storage>) -> Option<Json<HashMap<(
                 last_name: user.last_name,
                 gender: user.gender,
             });
+            ages.insert(
+                id,
+                calculate_age_from_timestamp(user.birth_date, options.now),
+            );
         }
     }
     Some(Json(HashMap::new()))
@@ -243,6 +257,35 @@ fn locations_avg_no_params(
     options: State<Options>,
 ) -> Result<Json<HashMap<String, f64>>, Failure> {
     locations_avg(id, None, storage, options)
+}
+
+fn calculate_age_from_timestamp(birth_date_timestamp: i32, now_timestamp: i32) -> i32 {
+    let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
+
+    let now = NaiveDateTime::from_timestamp(now_timestamp as i64, 0);
+
+    let birth_date_year = birth_date.year();
+    let now_year = now.year();
+
+    let year_diff = now_year - birth_date_year;
+
+    let birth_date_in_year_month = birth_date.month();
+    let now_in_year_month = now.month();
+    let birth_date_in_year_day = birth_date.day();
+    let now_in_year_day = now.day();
+
+    let did_full_year_pass = if now_in_year_month > birth_date_in_year_month ||
+        (now_in_year_month == birth_date_in_year_month && now_in_year_day >= birth_date_in_year_day)
+    {
+        true
+    } else {
+        false
+    };
+
+    let year_correction = if !did_full_year_pass { -1 } else { 0 };
+
+    let age = year_diff + year_correction;
+    age
 }
 
 #[get("/locations/<id>/avg?<params>")]
@@ -294,32 +337,7 @@ fn locations_avg(
             let user = users.get(&v.user).unwrap();
 
             let birth_date_timestamp = user.birth_date;
-            let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
-
-            let now = NaiveDateTime::from_timestamp(options.now as i64, 0);
-
-            let birth_date_year = birth_date.year();
-            let now_year = now.year();
-
-            let year_diff = now_year - birth_date_year;
-
-            let birth_date_in_year_month = birth_date.month();
-            let now_in_year_month = now.month();
-            let birth_date_in_year_day = birth_date.day();
-            let now_in_year_day = now.day();
-
-            let did_full_year_pass = if now_in_year_month > birth_date_in_year_month ||
-                (now_in_year_month == birth_date_in_year_month &&
-                    now_in_year_day >= birth_date_in_year_day)
-            {
-                true
-            } else {
-                false
-            };
-
-            let year_correction = if !did_full_year_pass { -1 } else { 0 };
-
-            let age = year_diff + year_correction;
+            let age = calculate_age_from_timestamp(birth_date_timestamp, options.now);
 
             if from_age <= age {
                 true
@@ -335,32 +353,7 @@ fn locations_avg(
             let user = users.get(&v.user).unwrap();
 
             let birth_date_timestamp = user.birth_date;
-            let birth_date = NaiveDateTime::from_timestamp(birth_date_timestamp as i64, 0);
-
-            let now = NaiveDateTime::from_timestamp(options.now as i64, 0);
-
-            let birth_date_year = birth_date.year();
-            let now_year = now.year();
-
-            let year_diff = now_year - birth_date_year;
-
-            let birth_date_in_year_month = birth_date.month();
-            let now_in_year_month = now.month();
-            let birth_date_in_year_day = birth_date.day();
-            let now_in_year_day = now.day();
-
-            let did_full_year_pass = if now_in_year_month > birth_date_in_year_month ||
-                (now_in_year_month == birth_date_in_year_month &&
-                    now_in_year_day >= birth_date_in_year_day)
-            {
-                true
-            } else {
-                false
-            };
-
-            let year_correction = if !did_full_year_pass { -1 } else { 0 };
-
-            let age = year_diff + year_correction;
+            let age = calculate_age_from_timestamp(birth_date_timestamp, options.now);
 
             if to_age > age {
                 true
@@ -583,6 +576,49 @@ struct Storage {
     users: RwLock<HashMap<u32, User>>,
     locations: RwLock<HashMap<u32, Location>>,
     visits: RwLock<HashMap<u32, Visit>>,
+    ages: RwLock<HashMap<u32, i32>>,
+}
+
+fn read_entities_from_file<T>(
+    data_file: &mut T,
+    template: &str,
+    all_users: &mut HashMap<u32, User>,
+    all_locations: &mut HashMap<u32, Location>,
+    all_visits: &mut HashMap<u32, Visit>,
+    ages: &mut HashMap<u32, i32>,
+    options: &Options,
+) where
+    T: Read,
+{
+    let mut data = String::new();
+    data_file.read_to_string(&mut data).unwrap();
+
+    match template {
+        "users_" => {
+            let mut users: HashMap<String, Vec<User>> = serde_json::from_str(&data).unwrap();
+            for v in users.remove("users").unwrap() {
+                ages.insert(
+                    v.id,
+                    calculate_age_from_timestamp(v.birth_date, options.now),
+                );
+                all_users.insert(v.id, v);
+            }
+        }
+        "locations_" => {
+            let mut locations: HashMap<String, Vec<Location>> =
+                serde_json::from_str(&data).unwrap();
+            for v in locations.remove("locations").unwrap() {
+                all_locations.insert(v.id, v);
+            }
+        }
+        "visits_" => {
+            let mut visits: HashMap<String, Vec<Visit>> = serde_json::from_str(&data).unwrap();
+            for v in visits.remove("visits").unwrap() {
+                all_visits.insert(v.id, v);
+            }
+        }
+        _ => unreachable!(),
+    }
 }
 
 fn input_data(data_path: &Path, options: &Options) -> Result<Storage, io::Error> {
@@ -590,6 +626,8 @@ fn input_data(data_path: &Path, options: &Options) -> Result<Storage, io::Error>
     let mut all_users = HashMap::new();
     let mut all_locations = HashMap::new();
     let mut all_visits = HashMap::new();
+    let mut ages = HashMap::new();
+
     for template in &entity_name_templates {
         let mut index = 1;
         loop {
@@ -604,48 +642,33 @@ fn input_data(data_path: &Path, options: &Options) -> Result<Storage, io::Error>
                 Ok(f) => f,
                 Err(_) => break,
             };
-            let mut data = String::new();
-            data_file.read_to_string(&mut data).unwrap();
-
-            match &*template {
-                &"users_" => {
-                    let mut users: HashMap<String, Vec<User>> =
-                        serde_json::from_str(&data).unwrap();
-                    for v in users.remove("users").unwrap() {
-                        all_users.insert(v.id, v);
-                    }
-                }
-                &"locations_" => {
-                    let mut locations: HashMap<String, Vec<Location>> =
-                        serde_json::from_str(&data).unwrap();
-                    for v in locations.remove("locations").unwrap() {
-                        all_locations.insert(v.id, v);
-                    }
-                }
-                &"visits_" => {
-                    let mut visits: HashMap<String, Vec<Visit>> =
-                        serde_json::from_str(&data).unwrap();
-                    for v in visits.remove("visits").unwrap() {
-                        all_visits.insert(v.id, v);
-                    }
-                }
-                _ => unreachable!(),
-            }
+            read_entities_from_file(
+                &mut data_file,
+                template,
+                &mut all_users,
+                &mut all_locations,
+                &mut all_visits,
+                &mut ages,
+                &options,
+            );
             index += 1;
         }
     }
+
     Ok(Storage {
         users: RwLock::new(all_users),
         locations: RwLock::new(all_locations),
         visits: RwLock::new(all_visits),
+        ages: RwLock::new(ages),
     })
 }
 
-fn input_data_prod(data_dir_path: &Path) -> Result<Storage, io::Error> {
+fn input_data_prod(data_dir_path: &Path, options: &Options) -> Result<Storage, io::Error> {
     let entity_name_templates = ["users_", "locations_", "visits_"];
     let mut all_users = HashMap::new();
     let mut all_locations = HashMap::new();
     let mut all_visits = HashMap::new();
+    let mut ages = HashMap::new();
 
     let data_file_path = data_dir_path.join("data.zip");
     let file = File::open(data_file_path).unwrap();
@@ -664,38 +687,17 @@ fn input_data_prod(data_dir_path: &Path) -> Result<Storage, io::Error> {
             let maybe_data_file = zip.by_name(data_file_name.as_str());
             let mut data_file = match maybe_data_file {
                 Ok(f) => f,
-                Err(e) => {
-                    println!("error: {}", e);
-                    break;
-                }
+                Err(_) => break,
             };
-            let mut data = String::new();
-            data_file.read_to_string(&mut data).unwrap();
-
-            match &*template {
-                &"users_" => {
-                    let mut users: HashMap<String, Vec<User>> =
-                        serde_json::from_str(&data).unwrap();
-                    for v in users.remove("users").unwrap() {
-                        all_users.insert(v.id, v);
-                    }
-                }
-                &"locations_" => {
-                    let mut locations: HashMap<String, Vec<Location>> =
-                        serde_json::from_str(&data).unwrap();
-                    for v in locations.remove("locations").unwrap() {
-                        all_locations.insert(v.id, v);
-                    }
-                }
-                &"visits_" => {
-                    let mut visits: HashMap<String, Vec<Visit>> =
-                        serde_json::from_str(&data).unwrap();
-                    for v in visits.remove("visits").unwrap() {
-                        all_visits.insert(v.id, v);
-                    }
-                }
-                _ => unreachable!(),
-            }
+            read_entities_from_file(
+                &mut data_file,
+                template,
+                &mut all_users,
+                &mut all_locations,
+                &mut all_visits,
+                &mut ages,
+                &options,
+            );
             index += 1;
         }
     }
@@ -704,6 +706,7 @@ fn input_data_prod(data_dir_path: &Path) -> Result<Storage, io::Error> {
         users: RwLock::new(all_users),
         locations: RwLock::new(all_locations),
         visits: RwLock::new(all_visits),
+        ages: RwLock::new(ages),
     })
 }
 
@@ -795,7 +798,7 @@ fn work() -> Result<(), Box<Error>> {
     options_path.push("options.txt");
     let options = read_options(&options_path).unwrap();
     let data = match &*env {
-        "prod" => input_data_prod(&data_dir_path).unwrap(),
+        "prod" => input_data_prod(&data_dir_path, &options).unwrap(),
         "dev" => input_data(&data_dir_path, &options).unwrap(),
         _ => unreachable!(),
     };
