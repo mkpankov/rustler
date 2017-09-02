@@ -16,6 +16,7 @@ use rocket::State;
 use rocket::http::Status;
 use rocket::response::Failure;
 use rocket_contrib::Json;
+use serde::{Deserialize, Deserializer};
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -181,20 +182,20 @@ fn users_update(
     let user_entry = users.entry(id);
     match user_entry {
         Entry::Occupied(mut e) => {
-            if let Some(email) = user_update.email {
-                e.get_mut().email = email;
+            if user_update.email != "" {
+                e.get_mut().email = user_update.email;
             }
-            if let Some(birth_date) = user_update.birth_date {
-                e.get_mut().birth_date = birth_date;
+            if user_update.birth_date != 0 {
+                e.get_mut().birth_date = user_update.birth_date;
             }
-            if let Some(first_name) = user_update.first_name {
-                e.get_mut().first_name = first_name;
+            if user_update.first_name != "" {
+                e.get_mut().first_name = user_update.first_name;
             }
-            if let Some(last_name) = user_update.last_name {
-                e.get_mut().last_name = last_name;
+            if user_update.last_name != "" {
+                e.get_mut().last_name = user_update.last_name;
             }
-            if let Some(gender) = user_update.gender {
-                e.get_mut().gender = gender;
+            if user_update.gender != Gender::Unknown {
+                e.get_mut().gender = user_update.gender;
             }
         }
         Entry::Vacant(_) => return None,
@@ -406,17 +407,17 @@ fn locations_update(
     let location_entry = locations.entry(id);
     match location_entry {
         Entry::Occupied(mut e) => {
-            if let Some(city) = location_update.city {
-                e.get_mut().city = city;
+            if location_update.city != "" {
+                e.get_mut().city = location_update.city;
             }
-            if let Some(country) = location_update.country {
-                e.get_mut().country = country;
+            if location_update.country != "" {
+                e.get_mut().country = location_update.country;
             }
-            if let Some(distance) = location_update.distance {
-                e.get_mut().distance = distance;
+            if location_update.distance != 0 {
+                e.get_mut().distance = location_update.distance;
             }
-            if let Some(place) = location_update.place {
-                e.get_mut().place = place;
+            if location_update.place != "" {
+                e.get_mut().place = location_update.place;
             }
         }
         Entry::Vacant(_) => return None,
@@ -472,17 +473,17 @@ fn visits_update(
     let visit_entry = visits.entry(id);
     match visit_entry {
         Entry::Occupied(mut e) => {
-            if let Some(location) = visit_update.location {
-                e.get_mut().location = location;
+            if visit_update.location != 0 {
+                e.get_mut().location = visit_update.location;
             };
-            if let Some(mark) = visit_update.mark {
-                e.get_mut().mark = mark;
+            if visit_update.mark != 0 {
+                e.get_mut().mark = visit_update.mark;
             }
-            if let Some(user) = visit_update.user {
-                e.get_mut().user = user;
+            if visit_update.user != 0 {
+                e.get_mut().user = visit_update.user;
             }
-            if let Some(visited_at) = visit_update.visited_at {
-                e.get_mut().visited_at = visited_at;
+            if visit_update.visited_at != 0 {
+                e.get_mut().visited_at = visit_update.visited_at;
             }
         }
         Entry::Vacant(_) => return None,
@@ -682,10 +683,17 @@ fn input_data_prod(data_dir_path: &Path) -> Result<Storage, io::Error> {
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 enum Gender {
+    Unknown,
     #[serde(rename = "m")]
     Male,
     #[serde(rename = "f")]
     Female,
+}
+
+impl Default for Gender {
+    fn default() -> Self {
+        Gender::Unknown
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -700,11 +708,16 @@ struct User {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct UserUpdate {
-    email: Option<String>,      // [char; 100]
-    first_name: Option<String>, // [char; 50]
-    last_name: Option<String>,  // [char; 50]
-    gender: Option<Gender>,
-    birth_date: Option<i32>,
+    #[serde(default)]
+    email: String, // [char; 100]
+    #[serde(default)]
+    first_name: String, // [char; 50]
+    #[serde(default)]
+    last_name: String, // [char; 50]
+    #[serde(default)]
+    gender: Gender,
+    #[serde(default)]
+    birth_date: i32,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -718,10 +731,14 @@ struct Location {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct LocationUpdate {
-    place: Option<String>,
-    country: Option<String>, // [char; 50]
-    city: Option<String>,    // [char; 50]
-    distance: Option<u32>,
+    #[serde(default)]
+    place: String,
+    #[serde(default)]
+    country: String, // [char; 50]
+    #[serde(default)]
+    city: String, // [char; 50]
+    #[serde(default)]
+    distance: u32,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -735,10 +752,14 @@ struct Visit {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct VisitUpdate {
-    location: Option<u32>,
-    user: Option<u32>,
-    visited_at: Option<i32>,
-    mark: Option<u8>,
+    #[serde(default)]
+    location: u32,
+    #[serde(default)]
+    user: u32,
+    #[serde(default)]
+    visited_at: i32,
+    #[serde(default)]
+    mark: u8,
 }
 
 #[derive(Debug)]
