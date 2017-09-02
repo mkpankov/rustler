@@ -165,6 +165,9 @@ struct QueryId {
     #[form(field = "query_id")] _query_id: u32,
 }
 
+#[derive(Serialize)]
+struct NewOrUpdateResponse;
+
 #[post("/users/<id>?<query_id>", data = "<user>")]
 fn users_update(
     id: u32,
@@ -172,7 +175,7 @@ fn users_update(
     query_id: QueryId,
     storage: State<Storage>,
     options: State<Options>,
-) -> Option<Json<HashMap<(), ()>>> {
+) -> Option<Json<NewOrUpdateResponse>> {
     let user_update = user.0;
 
     let users = &mut *storage.users.write().unwrap();
@@ -203,7 +206,7 @@ fn users_update(
         }
         Entry::Vacant(_) => return None,
     }
-    Some(Json(HashMap::new()))
+    Some(Json(NewOrUpdateResponse))
 }
 
 #[post("/users/new", data = "<user>")]
@@ -211,7 +214,7 @@ fn users_new(
     user: Json<User>,
     storage: State<Storage>,
     options: State<Options>,
-) -> Option<Json<HashMap<(), ()>>> {
+) -> Option<Json<NewOrUpdateResponse>> {
     let user = user.0;
     let id = user.id;
 
@@ -235,7 +238,7 @@ fn users_new(
             );
         }
     }
-    Some(Json(HashMap::new()))
+    Some(Json(NewOrUpdateResponse))
 }
 
 #[get("/locations/<id>")]
@@ -258,7 +261,7 @@ fn locations_avg_no_params(
     id: u32,
     storage: State<Storage>,
     options: State<Options>,
-) -> Result<Json<HashMap<String, f64>>, Failure> {
+) -> Result<Json<LocationAvg>, Failure> {
     locations_avg(id, None, storage, options)
 }
 
@@ -297,7 +300,7 @@ fn locations_avg(
     params: Option<LocationAvgParams>,
     storage: State<Storage>,
     options: State<Options>,
-) -> Result<Json<HashMap<String, f64>>, Failure> {
+) -> Result<Json<LocationAvg>, Failure> {
     let all_locations = &storage.locations.read().unwrap();
     {
         if let None = all_locations.get(&id) {
@@ -411,9 +414,14 @@ fn locations_avg(
     let avg_mark_rounded = format!("{:.5}", avg_mark);
     let avg_mark_rounded: f64 = avg_mark_rounded.parse().unwrap();
 
-    let mut result = HashMap::new();
-    result.insert("avg".to_owned(), avg_mark_rounded);
-    Ok(Json(result))
+    Ok(Json(LocationAvg {
+        avg: avg_mark_rounded,
+    }))
+}
+
+#[derive(Serialize)]
+struct LocationAvg {
+    avg: f64,
 }
 
 #[post("/locations/<id>?<query_id>", data = "<location>")]
@@ -422,7 +430,7 @@ fn locations_update(
     location: Json<LocationUpdate>,
     query_id: QueryId,
     storage: State<Storage>,
-) -> Option<Json<HashMap<(), ()>>> {
+) -> Option<Json<NewOrUpdateResponse>> {
     let location_update = location.0;
 
     let locations = &mut storage.locations.write().unwrap();
@@ -444,14 +452,14 @@ fn locations_update(
         }
         Entry::Vacant(_) => return None,
     }
-    Some(Json(HashMap::new()))
+    Some(Json(NewOrUpdateResponse))
 }
 
 #[post("/locations/new", data = "<location>")]
 fn locations_new(
     location: Json<Location>,
     storage: State<Storage>,
-) -> Option<Json<HashMap<(), ()>>> {
+) -> Option<Json<NewOrUpdateResponse>> {
     let location = location.0;
     let id = location.id;
 
@@ -469,7 +477,7 @@ fn locations_new(
             });
         }
     }
-    Some(Json(HashMap::new()))
+    Some(Json(NewOrUpdateResponse))
 }
 
 #[get("/visits/<id>")]
@@ -488,7 +496,7 @@ fn visits_update(
     visit: Json<VisitUpdate>,
     query_id: QueryId,
     storage: State<Storage>,
-) -> Option<Json<HashMap<(), ()>>> {
+) -> Option<Json<NewOrUpdateResponse>> {
     let visit_update = visit.0;
 
     let visits = &mut storage.visits.write().unwrap();
@@ -510,11 +518,11 @@ fn visits_update(
         }
         Entry::Vacant(_) => return None,
     }
-    Some(Json(HashMap::new()))
+    Some(Json(NewOrUpdateResponse))
 }
 
 #[post("/visits/new", data = "<visit>")]
-fn visits_new(visit: Json<Visit>, storage: State<Storage>) -> Option<Json<HashMap<(), ()>>> {
+fn visits_new(visit: Json<Visit>, storage: State<Storage>) -> Option<Json<NewOrUpdateResponse>> {
     let visit = visit.0;
     let id = visit.id;
 
@@ -532,7 +540,7 @@ fn visits_new(visit: Json<Visit>, storage: State<Storage>) -> Option<Json<HashMa
             });
         }
     }
-    Some(Json(HashMap::new()))
+    Some(Json(NewOrUpdateResponse))
 }
 
 fn get_env() -> String {
