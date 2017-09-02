@@ -49,10 +49,7 @@ struct VisitInfo {
 }
 
 #[get("/users/<id>/visits")]
-fn users_visits_no_params(
-    id: u32,
-    storage: State<Storage>,
-) -> Result<Json<HashMap<String, Vec<VisitInfo>>>, Failure> {
+fn users_visits_no_params(id: u32, storage: State<Storage>) -> Result<Json<UserVisits>, Failure> {
     users_visits(id, None, storage)
 }
 
@@ -61,7 +58,7 @@ fn users_visits(
     id: u32,
     params: Option<UsersVisitsParams>,
     storage: State<Storage>,
-) -> Result<Json<HashMap<String, Vec<VisitInfo>>>, Failure> {
+) -> Result<Json<UserVisits>, Failure> {
     let all_users = &*storage.users.read().unwrap();
     {
         if let None = all_users.get(&id) {
@@ -152,9 +149,15 @@ fn users_visits(
         })
         .collect();
 
-    let mut response = HashMap::new();
-    response.insert("visits".to_owned(), result_visits);
+    let mut response = UserVisits {
+        visits: result_visits,
+    };
     Ok(Json(response))
+}
+
+#[derive(Serialize)]
+struct UserVisits {
+    visits: Vec<VisitInfo>,
 }
 
 #[derive(FromForm)]
