@@ -2,7 +2,7 @@ use gender::Gender;
 use Options;
 use QueryId;
 use Storage;
-use NewOrUpdateResponse;
+use util::NewOrUpdateResponse;
 
 use chrono::{Datelike, NaiveDateTime};
 use rocket::State;

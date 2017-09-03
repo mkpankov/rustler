@@ -14,6 +14,7 @@ mod gender;
 mod locations;
 mod users;
 mod visits;
+mod util;
 
 #[cfg(test)]
 mod tests;
@@ -21,9 +22,7 @@ mod tests;
 use users::User;
 use locations::Location;
 use visits::Visit;
-
-use serde::{Serialize, Serializer};
-use serde::ser::SerializeMap;
+use util::QueryId;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -33,23 +32,6 @@ use std::io::{self, BufReader, Read};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
-
-#[derive(FromForm)]
-struct QueryId {
-    #[form(field = "query_id")] _query_id: u32,
-}
-
-struct NewOrUpdateResponse;
-
-impl Serialize for NewOrUpdateResponse {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let map = serializer.serialize_map(Some(0))?;
-        map.end()
-    }
-}
 
 fn get_env() -> String {
     match env::var("ENVIRONMENT") {

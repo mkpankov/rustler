@@ -1,6 +1,6 @@
 use QueryId;
 use Storage;
-use NewOrUpdateResponse;
+use util::NewOrUpdateResponse;
 
 use rocket::State;
 use rocket_contrib::Json;
