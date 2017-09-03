@@ -12,7 +12,8 @@ extern crate zip;
 
 use chrono::{Datelike, NaiveDateTime};
 use rocket::State;
-use rocket::http::Status;
+use rocket::http::{RawStr, Status};
+use rocket::request::{Form, FromFormValue};
 use rocket::response::Failure;
 use rocket_contrib::Json;
 use serde::{Serialize, Serializer};
@@ -259,13 +260,25 @@ fn locations(id: u32, storage: State<Storage>) -> Option<Json<Location>> {
     locations.get(&id).map(|entity| Json(entity.clone()))
 }
 
-#[derive(FromForm)]
+#[derive(FromForm, Debug)]
 struct LocationAvgParams {
     #[form(field = "fromDate")] from_date: Option<i32>,
     #[form(field = "toDate")] to_date: Option<i32>,
     #[form(field = "fromAge")] from_age: Option<i32>,
     #[form(field = "toAge")] to_age: Option<i32>,
-    gender: Option<String>,
+    gender: Option<Gender>,
+}
+
+impl<'v> FromFormValue<'v> for Gender {
+    type Error = &'v RawStr;
+
+    fn from_form_value(form_value: &'v RawStr) -> Result<Gender, &'v RawStr> {
+        match form_value.as_str() {
+            "m" => Ok(Gender::Male),
+            "f" => Ok(Gender::Female),
+            _ => Err(form_value),
+        }
+    }
 }
 
 #[get("/locations/<id>/avg")]
@@ -313,6 +326,8 @@ fn locations_avg(
     storage: State<Storage>,
     options: State<Options>,
 ) -> Result<Json<LocationAvg>, Failure> {
+    println!("Params: {:?}", params);
+
     let all_locations = &storage.locations.read().unwrap();
     {
         if let None = all_locations.get(&id) {
@@ -322,10 +337,16 @@ fn locations_avg(
 
     if let Some(ref params) = params {
         if let Some(ref gender) = params.gender {
-            match gender.as_ref() {
-                "m" | "f" => {}
-                _ => return Err(Failure(Status::BadRequest)),
+            match *gender {
+                Gender::Unknown => return Err(Failure(Status::BadRequest)),
+                _ => {}
             };
+        }
+
+        if params.from_age.is_none() && params.from_date.is_none() && params.gender.is_none() &&
+            params.to_age.is_none() && params.to_date.is_none()
+        {
+            return Err(Failure(Status::BadRequest));
         }
     }
 
@@ -341,12 +362,6 @@ fn locations_avg(
     };
 
     let result_visits: Vec<_> = if let Some(params) = params {
-        if params.from_age.is_none() && params.from_date.is_none() && params.gender.is_none() &&
-            params.to_age.is_none() && params.to_date.is_none()
-        {
-            return Err(Failure(Status::BadRequest));
-        }
-
         let from_date_visits =
             location_visits.filter(|v| if let Some(from_date) = params.from_date {
                 if from_date < v.visited_at {
@@ -405,12 +420,7 @@ fn locations_avg(
             let user = users.get(&v.user).unwrap();
             let reference_gender = &user.gender;
 
-            let parsed_gender = match gender.as_ref() {
-                "m" => Gender::Male,
-                "f" => Gender::Female,
-                _ => unreachable!(),
-            };
-            if parsed_gender == *reference_gender {
+            if gender == reference_gender {
                 true
             } else {
                 false
