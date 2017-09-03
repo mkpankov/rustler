@@ -13,7 +13,7 @@ extern crate zip;
 use chrono::{Datelike, NaiveDateTime};
 use rocket::State;
 use rocket::http::{RawStr, Status};
-use rocket::request::{Form, FromFormValue};
+use rocket::request::FromFormValue;
 use rocket::response::Failure;
 use rocket_contrib::Json;
 use serde::{Serialize, Serializer};
