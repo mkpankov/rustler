@@ -573,17 +573,17 @@ fn visits_update(
             }
             if visit_update.user != 0 {
                 let user_visits_ids = &mut storage.user_visits.write().unwrap();
-                let new_visit_location = visit_update.location;
-                let old_visit_location = e.get().location;
+                let new_visit_user = visit_update.user;
+                let old_visit_user = e.get().user;
 
-                let old_user_visits_ids = user_visits_ids[&old_visit_location]
+                let old_user_visits_ids = user_visits_ids[&old_visit_user]
                     .iter()
                     .map(|visit_id| *visit_id)
                     .filter(|visit_id| *visit_id != id)
                     .collect();
 
                 {
-                    let new_user_visits_ids_entry = user_visits_ids.entry(new_visit_location);
+                    let new_user_visits_ids_entry = user_visits_ids.entry(new_visit_user);
                     match new_user_visits_ids_entry {
                         Entry::Occupied(mut e) => {
                             e.get_mut().push(id);
@@ -594,10 +594,10 @@ fn visits_update(
                     }
                 }
 
-                let new_user_visits_ids = user_visits_ids[&new_visit_location].clone();
+                let new_user_visits_ids = user_visits_ids[&new_visit_user].clone();
 
-                user_visits_ids.insert(old_visit_location, old_user_visits_ids);
-                user_visits_ids.insert(new_visit_location, new_user_visits_ids);
+                user_visits_ids.insert(old_visit_user, old_user_visits_ids);
+                user_visits_ids.insert(new_visit_user, new_user_visits_ids);
 
                 e.get_mut().user = visit_update.user;
             }
@@ -639,10 +639,10 @@ fn visits_new(visit: Json<Visit>, storage: State<Storage>) -> Option<Json<NewOrU
             location_visits_ids.insert(new_visit_location, new_location_visits_ids);
 
             let user_visits_ids = &mut storage.user_visits.write().unwrap();
-            let new_visit_location = visit.location;
+            let new_visit_user = visit.user;
 
             {
-                let new_user_visits_ids_entry = user_visits_ids.entry(new_visit_location);
+                let new_user_visits_ids_entry = user_visits_ids.entry(new_visit_user);
                 match new_user_visits_ids_entry {
                     Entry::Occupied(mut e) => {
                         e.get_mut().push(id);
@@ -652,9 +652,9 @@ fn visits_new(visit: Json<Visit>, storage: State<Storage>) -> Option<Json<NewOrU
                     }
                 }
             }
-            let new_user_visits_ids = user_visits_ids[&new_visit_location].clone();
+            let new_user_visits_ids = user_visits_ids[&new_visit_user].clone();
 
-            user_visits_ids.insert(new_visit_location, new_user_visits_ids);
+            user_visits_ids.insert(new_visit_user, new_user_visits_ids);
 
             e.insert(Visit {
                 id: id,
