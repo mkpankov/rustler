@@ -4,6 +4,7 @@
 extern crate chrono;
 extern crate rocket;
 extern crate rocket_contrib;
+extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
@@ -14,6 +15,8 @@ use rocket::State;
 use rocket::http::Status;
 use rocket::response::Failure;
 use rocket_contrib::Json;
+use serde::{Serialize, Serializer};
+use serde::ser::SerializeMap;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -149,7 +152,7 @@ fn users_visits(
         })
         .collect();
 
-    let mut response = UserVisits {
+    let response = UserVisits {
         visits: result_visits,
     };
     Ok(Json(response))
@@ -165,8 +168,17 @@ struct QueryId {
     #[form(field = "query_id")] _query_id: u32,
 }
 
-#[derive(Serialize)]
 struct NewOrUpdateResponse;
+
+impl Serialize for NewOrUpdateResponse {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let map = serializer.serialize_map(Some(0))?;
+        map.end()
+    }
+}
 
 #[post("/users/<id>?<query_id>", data = "<user>")]
 fn users_update(
