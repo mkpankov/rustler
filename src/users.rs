@@ -1,4 +1,4 @@
-use Gender;
+use gender::Gender;
 use Options;
 use QueryId;
 use Storage;
