@@ -12,6 +12,45 @@ use rocket_contrib::Json;
 
 use std::collections::hash_map::Entry;
 
+#[derive(Serialize)]
+pub struct UserVisits {
+    visits: Vec<VisitInfo>,
+}
+
+#[derive(Serialize, Deserialize, FromForm)]
+pub struct UsersVisitsParams {
+    #[form(field = "fromDate")] from_date: Option<i32>,
+    #[form(field = "toDate")] to_date: Option<i32>,
+    country: Option<String>,
+    #[form(field = "toDistance")] to_distance: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct VisitInfo {
+    mark: u8,
+    visited_at: i32,
+    place: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct User {
+    pub id: u32,
+    email: String,      // [char; 100]
+    first_name: String, // [char; 50]
+    last_name: String,  // [char; 50]
+    pub gender: Gender,
+    pub birth_date: i32,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+struct UserUpdate {
+    #[serde(default)] email: String,      // [char; 100]
+    #[serde(default)] first_name: String, // [char; 50]
+    #[serde(default)] last_name: String,  // [char; 50]
+    #[serde(default)] gender: Gender,
+    #[serde(default)] birth_date: i32,
+}
+
 #[get("/users/<id>")]
 fn users(id: u32, storage: State<Storage>) -> Option<Json<User>> {
     let users = &*storage.users.read().unwrap();
@@ -230,43 +269,4 @@ pub fn calculate_age_from_timestamp(birth_date_timestamp: i32, now_timestamp: i3
 
     let age = year_diff + year_correction;
     age
-}
-
-#[derive(Serialize)]
-pub struct UserVisits {
-    visits: Vec<VisitInfo>,
-}
-
-#[derive(Serialize, Deserialize, FromForm)]
-pub struct UsersVisitsParams {
-    #[form(field = "fromDate")] from_date: Option<i32>,
-    #[form(field = "toDate")] to_date: Option<i32>,
-    country: Option<String>,
-    #[form(field = "toDistance")] to_distance: Option<u32>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct VisitInfo {
-    mark: u8,
-    visited_at: i32,
-    place: String,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct User {
-    pub id: u32,
-    email: String,      // [char; 100]
-    first_name: String, // [char; 50]
-    last_name: String,  // [char; 50]
-    pub gender: Gender,
-    pub birth_date: i32,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-struct UserUpdate {
-    #[serde(default)] email: String,      // [char; 100]
-    #[serde(default)] first_name: String, // [char; 50]
-    #[serde(default)] last_name: String,  // [char; 50]
-    #[serde(default)] gender: Gender,
-    #[serde(default)] birth_date: i32,
 }
