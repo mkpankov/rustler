@@ -536,8 +536,21 @@ fn visits_update(
                     .map(|visit_id| *visit_id)
                     .filter(|visit_id| *visit_id != id)
                     .collect();
-                let mut new_location_visits_ids = location_visits_ids[&new_visit_location].clone();
-                new_location_visits_ids.push(id);
+
+                {
+                    let new_location_visits_ids_entry =
+                        location_visits_ids.entry(new_visit_location);
+                    match new_location_visits_ids_entry {
+                        Entry::Occupied(mut e) => {
+                            e.get_mut().push(id);
+                        }
+                        Entry::Vacant(e) => {
+                            e.insert(vec![id]);
+                        }
+                    }
+                }
+
+                let new_location_visits_ids = location_visits_ids[&new_visit_location].clone();
 
                 location_visits_ids.insert(old_visit_location, old_location_visits_ids);
                 location_visits_ids.insert(new_visit_location, new_location_visits_ids);
@@ -571,8 +584,18 @@ fn visits_new(visit: Json<Visit>, storage: State<Storage>) -> Option<Json<NewOrU
             let location_visits_ids = &mut storage.location_visits.write().unwrap();
             let new_visit_location = visit.location;
 
-            let mut new_location_visits_ids = location_visits_ids[&new_visit_location].clone();
-            new_location_visits_ids.push(id);
+            {
+                let new_location_visits_ids_entry = location_visits_ids.entry(new_visit_location);
+                match new_location_visits_ids_entry {
+                    Entry::Occupied(mut e) => {
+                        e.get_mut().push(id);
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(vec![id]);
+                    }
+                }
+            }
+            let new_location_visits_ids = location_visits_ids[&new_visit_location].clone();
 
             location_visits_ids.insert(new_visit_location, new_location_visits_ids);
 
